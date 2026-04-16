@@ -28,6 +28,18 @@ def _save_image(document_id: str, page_no: int, image_index: int, image_info: di
     return str(image_path)
 
 
+def _save_page_render(document_id: str, page_no: int, page: fitz.Page) -> str:
+    ensure_extracted_image_storage()
+    image_dir = Path(settings.extracted_image_storage_path) / document_id / f"page-{page_no}"
+    image_dir.mkdir(parents=True, exist_ok=True)
+
+    file_name = f"page-render-{uuid4().hex}.png"
+    image_path = image_dir / file_name
+    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+    image_path.write_bytes(pix.tobytes("png"))
+    return str(image_path)
+
+
 def extract_page_chunks(pdf_path: str, doc_id: str) -> list[dict[str, int | str]]:
     chunks: list[dict[str, int | str]] = []
 
@@ -42,18 +54,27 @@ def extract_page_chunks(pdf_path: str, doc_id: str) -> list[dict[str, int | str]
             else:
                 page_chunks = _splitter.split_text(page_text)
 
+            page_images = page.get_images(full=True)
             page_image_urls: list[str] = []
             image_chunks: list[dict[str, int | str]] = []
 
-            for image_index, image in enumerate(page.get_images(full=True)):
+            page_render_url: str | None = None
+            if page_text or page_images:
+                rendered_page_path = _save_page_render(doc_id, page_no, page)
+                page_render_url = f"/api/v1/images/{Path(rendered_page_path).relative_to(settings.extracted_image_storage_path).as_posix()}"
+                page_image_urls.append(page_render_url)
+
+            for image_index, image in enumerate(page_images):
                 xref = image[0]
                 image_info = document.extract_image(xref)
                 if not image_info.get("image"):
                     continue
 
                 image_path = _save_image(doc_id, page_no, image_index, image_info)
-                image_url = f"/api/v1/images/{Path(image_path).relative_to(settings.extracted_image_storage_path).as_posix()}"
-                page_image_urls.append(image_url)
+                raw_image_url = f"/api/v1/images/{Path(image_path).relative_to(settings.extracted_image_storage_path).as_posix()}"
+                image_url = page_render_url or raw_image_url
+                if image_url not in page_image_urls:
+                    page_image_urls.append(image_url)
                 caption = generate_image_caption(image_path)
                 caption_text = caption
                 if page_text:

@@ -39,10 +39,10 @@ def test_extract_page_chunks_includes_image_caption_and_url(monkeypatch, tmp_pat
     image_chunk = image_chunks[0]
     assert image_chunk["text"].startswith("A small transparent marker image")
     assert image_chunk["page_no"] == 1
-    assert image_chunk["image_url"].startswith("/api/v1/images/doc-test.pdf/page-1/image-0-")
+    assert image_chunk["image_url"].startswith("/api/v1/images/doc-test.pdf/page-1/page-render-")
 
     text_chunk = text_chunks[0]
-    assert text_chunk["image_url"].startswith("/api/v1/images/doc-test.pdf/page-1/image-0-")
+    assert text_chunk["image_url"].startswith("/api/v1/images/doc-test.pdf/page-1/page-render-")
 
     relative_path = image_chunk["image_url"].replace("/api/v1/images/", "", 1)
     stored_image_path = image_root / relative_path
