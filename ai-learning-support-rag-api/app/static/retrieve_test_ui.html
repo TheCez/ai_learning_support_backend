@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RAG Retrieve Test UI</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --text: #0f172a;
+      --muted: #475569;
+      --accent: #0ea5e9;
+      --border: #dbe3ef;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(160deg, #f8fafc 0%, #eef6ff 60%, #f4fbff 100%);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 940px;
+      margin: 0 auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 12px 30px rgba(2, 6, 23, 0.06);
+      padding: 20px;
+    }
+
+    h1 {
+      margin: 0 0 8px;
+      font-size: 1.5rem;
+    }
+
+    p {
+      margin: 0 0 18px;
+      color: var(--muted);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+
+    label {
+      font-size: 0.9rem;
+      color: #334155;
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    input {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 11px;
+      font-size: 0.95rem;
+    }
+
+    .query-row {
+      margin-bottom: 12px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: white;
+      font-weight: 600;
+      padding: 10px 14px;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
+    .status {
+      margin: 12px 0;
+      font-size: 0.9rem;
+      color: #0c4a6e;
+      min-height: 20px;
+    }
+
+    pre {
+      margin: 0;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 10px;
+      padding: 14px;
+      overflow: auto;
+      min-height: 220px;
+      line-height: 1.35;
+      font-size: 0.85rem;
+    }
+
+    @media (max-width: 800px) {
+      .grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>RAG Retrieval Test UI</h1>
+    <p>Enter a course ID and query. Retrieved chunks are shown in raw JSON format.</p>
+
+    <div class="grid">
+      <div>
+        <label for="courseId">Course ID</label>
+        <input id="courseId" type="text" value="test_course" />
+      </div>
+      <div>
+        <label for="limit">Limit</label>
+        <input id="limit" type="number" min="1" max="20" value="5" />
+      </div>
+      <div>
+        <label for="basePath">API Base</label>
+        <input id="basePath" type="text" value="/api/v1" />
+      </div>
+    </div>
+
+    <div class="query-row">
+      <label for="query">Query</label>
+      <input id="query" type="text" placeholder="Ask something from course documents" />
+    </div>
+
+    <button id="runBtn" type="button">Retrieve Chunks</button>
+    <div id="status" class="status"></div>
+    <pre id="output">{
+  "results": []
+}</pre>
+  </div>
+
+  <script>
+    const runBtn = document.getElementById("runBtn");
+    const courseIdInput = document.getElementById("courseId");
+    const queryInput = document.getElementById("query");
+    const limitInput = document.getElementById("limit");
+    const basePathInput = document.getElementById("basePath");
+    const statusEl = document.getElementById("status");
+    const outputEl = document.getElementById("output");
+
+    async function runRetrieve() {
+      const courseId = courseIdInput.value.trim();
+      const query = queryInput.value.trim();
+      const limit = Number(limitInput.value || 5);
+      const basePath = basePathInput.value.trim() || "/api/v1";
+
+      if (!courseId || !query) {
+        statusEl.textContent = "Course ID and query are required.";
+        return;
+      }
+
+      runBtn.disabled = true;
+      statusEl.textContent = "Fetching retrieval results...";
+
+      const endpoint = `${basePath}/courses/${encodeURIComponent(courseId)}/retrieve?query=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`;
+
+      try {
+        const response = await fetch(endpoint, {
+          method: "GET",
+          headers: { "Accept": "application/json" }
+        });
+
+        const data = await response.json();
+        outputEl.textContent = JSON.stringify(data, null, 2);
+
+        if (!response.ok) {
+          statusEl.textContent = `Request failed (${response.status}).`;
+          return;
+        }
+
+        const count = Array.isArray(data.results) ? data.results.length : 0;
+        statusEl.textContent = `Success. Retrieved ${count} chunk(s).`;
+      } catch (error) {
+        statusEl.textContent = "Network or server error.";
+        outputEl.textContent = JSON.stringify({ error: String(error) }, null, 2);
+      } finally {
+        runBtn.disabled = false;
+      }
+    }
+
+    runBtn.addEventListener("click", runRetrieve);
+    queryInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        runRetrieve();
+      }
+    });
+  </script>
+</body>
+</html>

@@ -18,3 +18,5 @@
 - Ingestion endpoint now saves raw PDFs locally and triggers a background ingestion task that chunks page-by-page, embeds with FastEmbed, and upserts vectors with the required metadata payload.
 - Qdrant health-check probe is now non-blocking at startup; unreachable Qdrant logs a clear warning and does not crash FastAPI boot.
 - Retrieval endpoint is now backed by filtered vector search against `course_materials` with course-level isolation enforced through Qdrant payload filtering.
+- Retrieval now returns `503 Service Unavailable` with a clear message when Qdrant is unreachable or a connection error occurs during search.
+- The combined test UI is available at `/api/v1/rag-test-app` for uploading PDFs and running raw retrieval queries end-to-end.

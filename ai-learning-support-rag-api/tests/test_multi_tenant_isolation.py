@@ -28,8 +28,10 @@ def test_multi_tenant_isolation():
             }
         ]
 
-    original_search_vectors = retrieve_module.search_vectors
-    retrieve_module.search_vectors = fake_search_vectors
+    original_search_vectors = retrieve_module.vector_db.search_vectors
+    original_probe = retrieve_module.vector_db.probe_qdrant_connection
+    retrieve_module.vector_db.search_vectors = fake_search_vectors
+    retrieve_module.vector_db.probe_qdrant_connection = lambda: True
 
     course_id_1 = "course_1"
     course_id_2 = "course_2"
@@ -65,4 +67,5 @@ def test_multi_tenant_isolation():
         assert retrieve_response_2.status_code == 200
         assert retrieve_response_2.json()["results"][0]["doc_id"] == f"{course_id_2}.pdf"
     finally:
-        retrieve_module.search_vectors = original_search_vectors
+        retrieve_module.vector_db.search_vectors = original_search_vectors
+        retrieve_module.vector_db.probe_qdrant_connection = original_probe

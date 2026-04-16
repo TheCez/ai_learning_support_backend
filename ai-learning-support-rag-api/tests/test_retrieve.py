@@ -45,6 +45,7 @@ def test_retrieve_endpoint(monkeypatch):
 
     monkeypatch.setattr(vector_db, "get_qdrant_client", lambda: FakeQdrantClient())
     monkeypatch.setattr(vector_db, "get_embedding_model", lambda: FakeEmbeddingModel())
+    monkeypatch.setattr(vector_db, "probe_qdrant_connection", lambda: True)
 
     response = client.get("/api/v1/courses/test_course/retrieve", params={"query": "cells"})
 
@@ -72,3 +73,29 @@ def test_retrieve_endpoint(monkeypatch):
 def test_retrieve_requires_query():
     response = client.get("/api/v1/courses/test_course/retrieve")
     assert response.status_code == 422
+
+
+def test_retrieve_returns_503_when_vector_db_unreachable(monkeypatch):
+    monkeypatch.setattr(vector_db, "probe_qdrant_connection", lambda: True)
+
+    def raise_connection_error(**kwargs):
+        raise ConnectionError("Qdrant unavailable")
+
+    monkeypatch.setattr(vector_db, "search_vectors", raise_connection_error)
+
+    response = client.get("/api/v1/courses/test_course/retrieve", params={"query": "cells"})
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Vector database is currently unreachable."}
+
+
+def test_retrieve_ui_page_served():
+    response = client.get("/api/v1/retrieve-ui")
+    assert response.status_code == 200
+    assert "RAG Retrieval Test UI" in response.text
+
+
+def test_rag_test_app_page_served():
+    response = client.get("/api/v1/rag-test-app")
+    assert response.status_code == 200
+    assert "RAG Test App" in response.text
