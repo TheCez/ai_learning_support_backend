@@ -1,16 +1,21 @@
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
 from app.api.v1 import health, upload, retrieve
 from app.services.local_storage import ensure_raw_pdf_storage
-from app.services.vector_db import ensure_collection
+from app.services.vector_db import initialize_qdrant
+
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     ensure_raw_pdf_storage()
-    ensure_collection()
+    asyncio.create_task(asyncio.to_thread(initialize_qdrant))
     yield
 
 app = FastAPI(lifespan=lifespan)

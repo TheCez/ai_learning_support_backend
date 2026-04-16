@@ -25,6 +25,7 @@ def ingest_pdf_to_qdrant(course_id: str, week: int, doc_id: str, file_path: str)
                 "page_no": page_no,
                 "week": week,
                 "doc_id": doc_id,
+                "text": record["text"],
             }
 
             point_id = str(

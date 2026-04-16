@@ -16,3 +16,5 @@
 - Added Qdrant integration service with collection bootstrap logic that ensures a single `course_materials` collection exists at startup.
 - Added page-aware PDF processing using PyMuPDF (`fitz`) and LangChain `RecursiveCharacterTextSplitter` (`chunk_size=1000`, `chunk_overlap=200`).
 - Ingestion endpoint now saves raw PDFs locally and triggers a background ingestion task that chunks page-by-page, embeds with FastEmbed, and upserts vectors with the required metadata payload.
+- Qdrant health-check probe is now non-blocking at startup; unreachable Qdrant logs a clear warning and does not crash FastAPI boot.
+- Retrieval endpoint is now backed by filtered vector search against `course_materials` with course-level isolation enforced through Qdrant payload filtering.
