@@ -89,11 +89,13 @@ def search_vectors(query: str, course_id: str, limit: int = 5) -> list[dict[str,
         ]
     )
 
+    candidate_limit = max(limit * 4, 20)
+
     query_response = client.query_points(
         collection_name=settings.qdrant_collection_name,
         query=query_vector,
         query_filter=course_filter,
-        limit=limit,
+        limit=candidate_limit,
         with_payload=True,
     )
 
@@ -102,6 +104,9 @@ def search_vectors(query: str, course_id: str, limit: int = 5) -> list[dict[str,
     mapped_results: list[dict[str, object]] = []
     for result in search_results:
         payload = result.payload or {}
+        kind = payload.get("kind")
+        if kind not in {"image", "text"}:
+            kind = "image" if payload.get("image_url") else "text"
         mapped_results.append(
             {
                 "text": payload.get("text", ""),
@@ -110,10 +115,31 @@ def search_vectors(query: str, course_id: str, limit: int = 5) -> list[dict[str,
                 "page_no": payload.get("page_no"),
                 "week": payload.get("week"),
                 "image_url": payload.get("image_url"),
+                "kind": kind,
             }
         )
 
-    return mapped_results
+    if len(mapped_results) <= 1:
+        return [{k: v for k, v in item.items() if k != "kind"} for item in mapped_results[:limit]]
+
+    image_results = [item for item in mapped_results if item["kind"] == "image"]
+    text_results = [item for item in mapped_results if item["kind"] == "text"]
+
+    if not image_results or not text_results:
+        return [{k: v for k, v in item.items() if k != "kind"} for item in mapped_results[:limit]]
+
+    balanced: list[dict[str, object]] = []
+    balanced.append(image_results.pop(0))
+    if len(balanced) < limit:
+        balanced.append(text_results.pop(0))
+
+    while len(balanced) < limit and (image_results or text_results):
+        if image_results and len(balanced) < limit:
+            balanced.append(image_results.pop(0))
+        if text_results and len(balanced) < limit:
+            balanced.append(text_results.pop(0))
+
+    return [{k: v for k, v in item.items() if k != "kind"} for item in balanced]
 
 
 def count_vectors_for_doc(course_id: str, doc_id: str) -> int:

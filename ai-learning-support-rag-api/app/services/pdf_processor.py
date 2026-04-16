@@ -40,6 +40,40 @@ def _save_page_render(document_id: str, page_no: int, page: fitz.Page) -> str:
     return str(image_path)
 
 
+def _compute_focus_clip(page: fitz.Page, image_xrefs: list[int]) -> fitz.Rect | None:
+    image_rects: list[fitz.Rect] = []
+    for xref in image_xrefs:
+        for rect in page.get_image_rects(xref):
+            if not rect.is_empty:
+                image_rects.append(rect)
+
+    if not image_rects:
+        return None
+
+    focus_rect = image_rects[0]
+    for rect in image_rects[1:]:
+        focus_rect |= rect
+
+    return fitz.Rect(
+        max(page.rect.x0, focus_rect.x0 - 12),
+        max(page.rect.y0, focus_rect.y0 - 12),
+        min(page.rect.x1, focus_rect.x1 + 12),
+        min(page.rect.y1, focus_rect.y1 + 12),
+    )
+
+
+def _save_page_focus_render(document_id: str, page_no: int, page: fitz.Page, clip: fitz.Rect) -> str:
+    ensure_extracted_image_storage()
+    image_dir = Path(settings.extracted_image_storage_path) / document_id / f"page-{page_no}"
+    image_dir.mkdir(parents=True, exist_ok=True)
+
+    file_name = f"page-render-{uuid4().hex}.png"
+    image_path = image_dir / file_name
+    pix = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False, clip=clip)
+    image_path.write_bytes(pix.tobytes("png"))
+    return str(image_path)
+
+
 def extract_page_chunks(pdf_path: str, doc_id: str) -> list[dict[str, int | str]]:
     chunks: list[dict[str, int | str]] = []
 
@@ -59,8 +93,13 @@ def extract_page_chunks(pdf_path: str, doc_id: str) -> list[dict[str, int | str]
             image_chunks: list[dict[str, int | str]] = []
 
             page_render_url: str | None = None
-            if page_text or page_images:
-                rendered_page_path = _save_page_render(doc_id, page_no, page)
+            if page_images:
+                image_xrefs = [int(image[0]) for image in page_images]
+                focus_clip = _compute_focus_clip(page, image_xrefs)
+                if focus_clip is not None:
+                    rendered_page_path = _save_page_focus_render(doc_id, page_no, page, focus_clip)
+                else:
+                    rendered_page_path = _save_page_render(doc_id, page_no, page)
                 page_render_url = f"/api/v1/images/{Path(rendered_page_path).relative_to(settings.extracted_image_storage_path).as_posix()}"
                 page_image_urls.append(page_render_url)
 
@@ -76,13 +115,10 @@ def extract_page_chunks(pdf_path: str, doc_id: str) -> list[dict[str, int | str]
                 if image_url not in page_image_urls:
                     page_image_urls.append(image_url)
                 caption = generate_image_caption(image_path)
-                caption_text = caption
-                if page_text:
-                    caption_text = f"{caption}\nPage context: {page_text[:600]}"
 
                 image_chunks.append(
                     {
-                        "text": caption_text,
+                        "text": caption,
                         "page_no": page_no,
                         "chunk_index": image_index,
                         "kind": "image",

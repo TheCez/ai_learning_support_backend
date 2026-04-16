@@ -26,6 +26,7 @@ def ingest_pdf_to_qdrant(course_id: str, week: int, doc_id: str, file_path: str)
                 "week": week,
                 "doc_id": doc_id,
                 "text": record["text"],
+                "kind": record.get("kind", "text"),
             }
             if record.get("image_url"):
                 metadata["image_url"] = record["image_url"]
