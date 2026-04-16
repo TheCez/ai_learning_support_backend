@@ -1,15 +1,19 @@
-# This file creates the FastAPI app and exposes the API endpoint
-# for the study-support agent.
-
 from fastapi import FastAPI
-from app.llm.schemas import LLMRequest
+from fastapi.middleware.cors import CORSMiddleware
+
+from app.llm.schemas import AskRequest, AskResponse
 from app.llm.llm_service import generate_answer
 
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
-@app.post("/generate-answer")
-def generate_answer_endpoint(data: LLMRequest):
-    # Accept student request, send it to the agent,
-    # and return the generated response.
-    return generate_answer(data)
+@app.post("/generate_answer", response_model=AskResponse)
+def generate_answer_endpoint(data: AskRequest):
+    return generate_answer(course_id=data.course_id, query=data.query)

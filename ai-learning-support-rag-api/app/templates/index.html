@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RAG Test App - Hybrid Image-RAG</title>
+  <title>RAG Test App - Ask the AI</title>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="min-h-screen bg-slate-100 text-slate-900">
   <main class="mx-auto max-w-7xl p-6 md:p-8">
     <header class="mb-6">
-      <h1 class="text-2xl font-bold">RAG Test App - Hybrid Image-RAG</h1>
-      <p class="mt-1 text-slate-600">Upload PDF content and visually inspect retrieved text and image-caption chunks.</p>
+      <h1 class="text-2xl font-bold">RAG Test App - Ask the AI</h1>
+      <p class="mt-1 text-slate-600">Upload PDF content, then ask a question and receive a synthesized answer with only the relevant images.</p>
     </header>
 
     <section class="grid grid-cols-1 gap-6 xl:grid-cols-2">
@@ -49,40 +49,33 @@
       </div>
 
       <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 class="text-lg font-semibold">2) Retrieve Chunks</h2>
+        <h2 class="text-lg font-semibold">2) Ask the AI</h2>
 
         <label for="query-course-id" class="mt-4 block text-sm font-medium text-slate-700">Course ID</label>
         <input id="query-course-id" type="text" value="test_course" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none" />
 
         <div class="mt-3 grid grid-cols-2 gap-3">
           <div>
-            <label for="query-limit" class="block text-sm font-medium text-slate-700">Limit</label>
-            <input id="query-limit" type="number" min="1" max="20" value="5" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none" />
+            <label for="query-course-id" class="block text-sm font-medium text-slate-700">Course ID</label>
+            <input id="query-course-id" type="text" value="test_course" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none" />
           </div>
           <div>
-            <label for="query-api-base" class="block text-sm font-medium text-slate-700">API Base</label>
-            <input id="query-api-base" type="text" value="/api/v1" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none" />
+            <label for="query-api-base" class="block text-sm font-medium text-slate-700">LLM API Base</label>
+            <input id="query-api-base" type="text" value="http://localhost:8001" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none" />
           </div>
         </div>
 
         <label for="query-text" class="mt-3 block text-sm font-medium text-slate-700">Query</label>
         <input id="query-text" type="text" placeholder="Ask from your uploaded PDF" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none" />
 
-        <button id="query-btn" type="button" class="mt-4 inline-flex rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">Retrieve Chunks</button>
+        <button id="query-btn" type="button" class="mt-4 inline-flex rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">Ask the AI</button>
         <p id="query-status" class="mt-2 text-sm text-slate-600"></p>
 
-        <div class="mt-4 rounded-lg bg-slate-900 p-3">
-          <pre id="query-output" class="max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-200">{
-  "results": []
-}</pre>
+        <div class="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <p id="query-output" class="whitespace-pre-wrap text-sm leading-7 text-slate-800">Your answer will appear here.</p>
+          <div id="visual-results" class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"></div>
         </div>
       </div>
-    </section>
-
-    <section class="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <h2 class="text-lg font-semibold">3) Visual Results</h2>
-      <p class="mt-1 text-sm text-slate-600">Image chunks render inline with Vision captions. Text-only chunks are shown as standard cards.</p>
-      <div id="visual-results" class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"></div>
     </section>
   </main>
 
@@ -97,7 +90,6 @@
 
     const queryBtn = document.getElementById("query-btn");
     const queryCourseId = document.getElementById("query-course-id");
-    const queryLimit = document.getElementById("query-limit");
     const queryApiBase = document.getElementById("query-api-base");
     const queryText = document.getElementById("query-text");
     const queryStatus = document.getElementById("query-status");
@@ -114,10 +106,6 @@
       };
       el.textContent = text;
       el.className = `mt-2 text-sm ${styles[kind] || styles.default}`;
-    }
-
-    function cardMeta(chunk) {
-      return `Doc: ${chunk.doc_id} | Page: ${chunk.page_no} | Week: ${chunk.week} | Score: ${Number(chunk.score || 0).toFixed(4)}`;
     }
 
     function showIngestWait(text) {
@@ -173,36 +161,27 @@
       return false;
     }
 
-    function renderVisualResults(results) {
+    function renderVisualResults(images) {
       visualResults.innerHTML = "";
 
-      if (!Array.isArray(results) || results.length === 0) {
-        visualResults.innerHTML = '<div class="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">No chunks returned yet.</div>';
+      if (!Array.isArray(images) || images.length === 0) {
+        visualResults.innerHTML = '<div class="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">No relevant images returned.</div>';
         return;
       }
 
-      for (const chunk of results) {
+      for (const imageUrl of images) {
         const card = document.createElement("article");
         card.className = "rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm";
 
-        if (chunk.image_url) {
-          card.innerHTML = `
-            <img
-              src="${chunk.image_url}"
-              alt="Retrieved document image"
-              class="max-h-64 object-contain rounded mb-4 w-full border border-slate-200 bg-white"
-              onerror="this.style.display='none';"
-              loading="lazy"
-            />
-            <p class="mb-3 text-sm leading-6 text-slate-800">${chunk.text || ""}</p>
-            <p class="text-xs text-slate-500">${cardMeta(chunk)}</p>
-          `;
-        } else {
-          card.innerHTML = `
-            <p class="mb-3 text-sm leading-6 text-slate-800">${chunk.text || ""}</p>
-            <p class="text-xs text-slate-500">${cardMeta(chunk)}</p>
-          `;
-        }
+        card.innerHTML = `
+          <img
+            src="${imageUrl}"
+            alt="Relevant document image"
+            class="max-h-64 object-contain rounded w-full border border-slate-200 bg-white"
+            onerror="this.style.display='none';"
+            loading="lazy"
+          />
+        `;
 
         visualResults.appendChild(card);
       }
@@ -264,7 +243,6 @@
     async function retrieveChunks() {
       const courseId = queryCourseId.value.trim();
       const query = queryText.value.trim();
-      const limit = Number(queryLimit.value || 5);
       const apiBase = queryApiBase.value.trim() || "/api/v1";
 
       if (!courseId || !query) {
@@ -273,28 +251,32 @@
       }
 
       queryBtn.disabled = true;
-      setStatus(queryStatus, "Retrieving chunks...", "default");
+      setStatus(queryStatus, "Asking the AI...", "default");
 
-      const url = `${apiBase}/courses/${encodeURIComponent(courseId)}/retrieve?query=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`;
+      const url = `${apiBase.replace(/\/$/, "")}/generate_answer`;
 
       try {
-        const res = await fetch(url, { method: "GET", headers: { "Accept": "application/json" } });
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Accept": "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify({ course_id: courseId, query }),
+        });
         const data = await res.json();
-        queryOutput.textContent = JSON.stringify(data, null, 2);
 
         if (!res.ok) {
-          setStatus(queryStatus, `Retrieve failed (${res.status}).`, "bad");
+          queryOutput.textContent = data && data.detail ? String(data.detail) : `Request failed (${res.status}).`;
+          setStatus(queryStatus, `Ask failed (${res.status}).`, "bad");
           renderVisualResults([]);
           return;
         }
 
-        const results = Array.isArray(data.results) ? data.results : [];
-        renderVisualResults(results);
+        queryOutput.textContent = data.answer || "No answer returned.";
+        renderVisualResults(Array.isArray(data.images) ? data.images : []);
 
-        setStatus(queryStatus, `Success. Retrieved ${results.length} chunk(s).`, "good");
+        setStatus(queryStatus, "Answer generated successfully.", "good");
       } catch (error) {
-        queryOutput.textContent = JSON.stringify({ error: String(error) }, null, 2);
-        setStatus(queryStatus, "Retrieve request failed.", "bad");
+        queryOutput.textContent = `Unexpected error: ${String(error)}`;
+        setStatus(queryStatus, "Ask request failed.", "bad");
         renderVisualResults([]);
       } finally {
         queryBtn.disabled = false;

@@ -37,6 +37,10 @@ services:
       dockerfile: Dockerfile
     env_file:
       - ./llm_api/.env
+    environment:
+      - RAG_API_BASE_URL=http://rag_api:8000/api/v1
     ports:
       - "8001:8001"
+    depends_on:
+      - rag_api
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload

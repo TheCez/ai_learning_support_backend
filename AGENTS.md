@@ -24,3 +24,5 @@
 - Test UI now renders hybrid retrieval results visually: chunks with `image_url` display inline images and Vision-generated captions, while text-only chunks render as standard text cards.
 - Text chunks now inherit page-level `image_url` when a page contains extracted images, improving image visibility for text-led queries (e.g., "chambers").
 - Added document readiness endpoint `GET /api/v1/courses/{course_id}/documents/{doc_id}/ready`; the test UI now shows a rotating indexing spinner and waits for vector readiness before querying.
+- The user-facing demo flow now uses `llm_api` as the only query surface: the Test UI posts `course_id + query` to `llm_api`, which internally fetches RAG results, synthesizes a human-readable answer, and returns only `answer` plus relevant `images`.
+- Root `docker-compose.yml` launches both APIs and injects `RAG_API_BASE_URL=http://rag_api:8000/api/v1` into `llm_api` so the demo flow works inside the shared Docker network.
