@@ -102,3 +102,81 @@ Instructions:
 """
 
     return system_prompt, user_prompt
+
+
+def build_quiz_messages(context: str, question_count: int = 10):
+    system_prompt = (
+        "You are an AI nursing educator generating quiz questions from study material. "
+        "Use only the provided context. "
+        "Generate high-quality MCQs that test factual understanding, not trivia."
+    )
+
+    user_prompt = f"""
+Study Material Context:
+{context}
+
+Instructions:
+- Create exactly {question_count} multiple-choice questions.
+- Each question must have exactly 4 options.
+- Provide answer_index as an integer from 0 to 3.
+- Include a short explanation (1 sentence) for why the correct option is right.
+- Keep questions clear and student-friendly.
+- Avoid duplicate questions.
+- Return strict JSON with exactly one key: quiz.
+- quiz must be an array of objects with keys: question, options, answer_index, explanation.
+"""
+
+    return system_prompt, user_prompt
+
+
+def build_quiz_completion_messages(context: str, existing_questions: list[str], missing_count: int):
+    existing_block = "\n".join(f"- {question}" for question in existing_questions) or "None"
+
+    system_prompt = (
+        "You are an AI nursing educator generating additional non-duplicate MCQs from study material. "
+        "Use only provided context and avoid repeating existing questions."
+    )
+
+    user_prompt = f"""
+Study Material Context:
+{context}
+
+Existing Questions (DO NOT REPEAT):
+{existing_block}
+
+Instructions:
+- Generate exactly {missing_count} additional multiple-choice questions.
+- Each question must have exactly 4 options.
+- Provide answer_index as an integer from 0 to 3.
+- Include a short explanation (1 sentence).
+- Do not repeat or paraphrase existing questions.
+- Return strict JSON with exactly one key: quiz.
+- quiz must be an array of objects with keys: question, options, answer_index, explanation.
+"""
+
+    return system_prompt, user_prompt
+
+
+def build_slide_summarization_messages(spoken_text: str):
+    system_prompt = (
+        "You are an expert presentation designer and educator. "
+        "Your task is to convert a detailed lecture transcript into a concise, visually-friendly presentation slide. "
+        "Extract core concepts and present them as clear, memorable bullet points."
+    )
+
+    user_prompt = f"""
+Lecture Transcript:
+{spoken_text}
+
+Instructions:
+- Create a single presentation slide from the transcript.
+- The slide must have a clear, concise title (5-10 words).
+- Generate 3 to 5 short bullet points that capture the core concepts.
+- Each bullet point should be 1 line (max 15 words).
+- Prioritize key facts and clinical relevance.
+- Use simple, student-friendly language.
+- Return strict JSON with exactly two keys: title and bullets.
+- bullets must be an array of strings.
+"""
+
+    return system_prompt, user_prompt

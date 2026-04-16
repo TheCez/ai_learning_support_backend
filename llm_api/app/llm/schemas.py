@@ -12,12 +12,31 @@ class AskResponse(BaseModel):
     images: List[str] = Field(default_factory=list)
 
 
+class QuizRequest(BaseModel):
+    course_id: str
+
+
+class QuizQuestion(BaseModel):
+    question: str
+    options: List[str] = Field(default_factory=list)
+    answer_index: int
+    explanation: str
+
+
+class QuizResponse(BaseModel):
+    quiz: List[QuizQuestion] = Field(default_factory=list)
+
+
 class AnswerPayload(BaseModel):
     answer: str
 
 
 class ImageSelectionPayload(BaseModel):
     selected_image_ids: List[str] = Field(default_factory=list)
+
+
+class QuizPayload(BaseModel):
+    quiz: List[QuizQuestion] = Field(default_factory=list)
 
 
 class ValidatedChunk(BaseModel):
@@ -38,3 +57,24 @@ class LLMResponse(BaseModel):
     task: str
     answer: str
     source_pages: List[int]
+
+
+class Slide(BaseModel):
+    title: str
+    bullets: List[str] = Field(default_factory=list)
+
+
+class PresentationRequest(BaseModel):
+    course_id: str
+    query: str
+
+
+class PresentationResponse(BaseModel):
+    spoken_text: str
+    slide: Slide
+    images: List[str] = Field(default_factory=list)
+
+
+class SlidePayload(BaseModel):
+    title: str
+    bullets: List[str] = Field(default_factory=list)

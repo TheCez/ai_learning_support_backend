@@ -10,8 +10,25 @@ import httpx
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from .schemas import AnswerPayload, AskResponse, ImageSelectionPayload
-from .prompt_builder import build_answer_messages, build_image_selection_messages
+from .schemas import (
+    AnswerPayload,
+    AskResponse,
+    ImageSelectionPayload,
+    QuizPayload,
+    QuizQuestion,
+    QuizResponse,
+    PresentationRequest,
+    PresentationResponse,
+    Slide,
+    SlidePayload,
+)
+from .prompt_builder import (
+    build_answer_messages,
+    build_image_selection_messages,
+    build_quiz_completion_messages,
+    build_quiz_messages,
+    build_slide_summarization_messages,
+)
 
 # Load environment variables from the .env file.
 load_dotenv()
@@ -26,11 +43,11 @@ RAG_API_BASE_URL = os.getenv("RAG_API_BASE_URL", "http://rag_api:8000/api/v1")
 client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 
 
-def fetch_retrieval_results(course_id: str, query: str) -> list[dict[str, object]]:
+def fetch_retrieval_results(course_id: str, query: str, limit: int = 5) -> list[dict[str, object]]:
     retrieve_url = f"{RAG_API_BASE_URL.rstrip('/')}/courses/{quote(course_id, safe='')}/retrieve"
 
     with httpx.Client(timeout=30.0) as http_client:
-        response = http_client.get(retrieve_url, params={"query": query})
+        response = http_client.get(retrieve_url, params={"query": query, "limit": limit})
         response.raise_for_status()
 
     payload = response.json()
@@ -126,6 +143,106 @@ def _parse_image_selection(content: str) -> ImageSelectionPayload:
     return ImageSelectionPayload.model_validate(payload)
 
 
+def _parse_quiz_payload(content: str) -> QuizPayload:
+    payload = json.loads(content)
+    return QuizPayload.model_validate(payload)
+
+
+def _normalize_quiz_questions(questions: list[QuizQuestion]) -> list[QuizQuestion]:
+    normalized: list[QuizQuestion] = []
+    seen: set[str] = set()
+
+    for question in questions:
+        question_text = question.question.strip()
+        if not question_text:
+            continue
+
+        dedupe_key = re.sub(r"\s+", " ", question_text.lower())
+        if dedupe_key in seen:
+            continue
+
+        options = [str(option).strip() for option in question.options if str(option).strip()]
+        if len(options) != 4:
+            continue
+
+        if question.answer_index < 0 or question.answer_index > 3:
+            continue
+
+        explanation = question.explanation.strip() or "Based on the uploaded study material."
+
+        seen.add(dedupe_key)
+        normalized.append(
+            QuizQuestion(
+                question=question_text,
+                options=options,
+                answer_index=int(question.answer_index),
+                explanation=explanation,
+            )
+        )
+
+    return normalized
+
+
+def _build_quiz_context(results: list[dict[str, object]], max_chunks: int = 24, max_chars: int = 14000) -> str:
+    lines: list[str] = []
+    total_chars = 0
+
+    for chunk in results[:max_chunks]:
+        text = str(chunk.get("text") or "").strip()
+        if not text:
+            continue
+
+        page_no = chunk.get("page_no")
+        prefix = f"[Page {page_no}] " if page_no is not None else ""
+        line = f"{prefix}{text}"
+
+        if total_chars + len(line) > max_chars:
+            break
+
+        lines.append(line)
+        total_chars += len(line)
+
+    return "\n\n".join(lines)
+
+
+def _fetch_quiz_results(course_id: str) -> list[dict[str, object]]:
+    seed_queries = [
+        "key concepts",
+        "important definitions",
+        "core topics",
+        "clinical concepts",
+        "summary of material",
+    ]
+
+    merged: list[dict[str, object]] = []
+    seen: set[str] = set()
+
+    for seed_query in seed_queries:
+        try:
+            batch = fetch_retrieval_results(course_id=course_id, query=seed_query, limit=8)
+        except Exception:
+            continue
+
+        for item in batch:
+            text = str(item.get("text") or "").strip()
+            if not text:
+                continue
+            dedupe_key = "|".join(
+                [
+                    str(item.get("doc_id") or ""),
+                    str(item.get("page_no") or ""),
+                    text[:240],
+                ]
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            merged.append(item)
+
+    merged.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
+    return merged
+
+
 def generate_answer(course_id: str, query: str) -> AskResponse:
     try:
         results = fetch_retrieval_results(course_id=course_id, query=query)
@@ -202,3 +319,145 @@ def generate_answer(course_id: str, query: str) -> AskResponse:
 
     except Exception as e:
         return AskResponse(answer=f"Unexpected error: {type(e).__name__}: {str(e)}", images=[])
+
+
+def generate_quiz(course_id: str) -> QuizResponse:
+    try:
+        results = _fetch_quiz_results(course_id=course_id)
+        if not results:
+            return QuizResponse(quiz=[])
+
+        context = _build_quiz_context(results)
+        if not context:
+            return QuizResponse(quiz=[])
+
+        system_prompt, user_prompt = build_quiz_messages(context=context, question_count=10)
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.3,
+            response_format={"type": "json_object"},
+        )
+
+        content = (
+            response.choices[0].message.content.strip()
+            if response.choices and response.choices[0].message.content
+            else ""
+        )
+        if not content:
+            return QuizResponse(quiz=[])
+
+        payload = _parse_quiz_payload(content)
+        questions = _normalize_quiz_questions(payload.quiz)
+
+        if len(questions) < 10:
+            missing = 10 - len(questions)
+            existing_questions = [question.question for question in questions]
+            complete_system_prompt, complete_user_prompt = build_quiz_completion_messages(
+                context=context,
+                existing_questions=existing_questions,
+                missing_count=missing,
+            )
+
+            completion_response = client.chat.completions.create(
+                model=OPENAI_MODEL,
+                messages=[
+                    {"role": "system", "content": complete_system_prompt},
+                    {"role": "user", "content": complete_user_prompt},
+                ],
+                temperature=0.2,
+                response_format={"type": "json_object"},
+            )
+
+            completion_content = (
+                completion_response.choices[0].message.content.strip()
+                if completion_response.choices and completion_response.choices[0].message.content
+                else ""
+            )
+
+            if completion_content:
+                completion_payload = _parse_quiz_payload(completion_content)
+                combined = _normalize_quiz_questions([*questions, *completion_payload.quiz])
+                questions = combined
+
+        return QuizResponse(quiz=questions[:10])
+
+    except Exception:
+        return QuizResponse(quiz=[])
+
+
+def _parse_slide_payload(content: str) -> SlidePayload:
+    payload = json.loads(content)
+    return SlidePayload.model_validate(payload)
+
+
+def generate_presentation(course_id: str, query: str) -> PresentationResponse:
+    """
+    Generate a presentation slide with accompanying spoken text and images.
+    
+    Step 1: Reuse generate_answer logic to get spoken_text and images.
+    Step 2: Summarize spoken_text into a single presentation slide.
+    """
+    try:
+        # Step 1: Generate the full answer using existing logic
+        answer_response = generate_answer(course_id=course_id, query=query)
+        spoken_text = answer_response.answer
+        images = answer_response.images
+
+        # Step 2: Summarize the answer into a presentation slide
+        if spoken_text == "This was not found in the uploaded material.":
+            # No content to summarize; return minimal slide
+            return PresentationResponse(
+                spoken_text=spoken_text,
+                slide=Slide(title="No Content", bullets=[]),
+                images=[],
+            )
+
+        slide_system_prompt, slide_user_prompt = build_slide_summarization_messages(
+            spoken_text=spoken_text
+        )
+
+        slide_response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": slide_system_prompt},
+                {"role": "user", "content": slide_user_prompt},
+            ],
+            temperature=0.1,
+            response_format={"type": "json_object"},
+        )
+
+        slide_content = (
+            slide_response.choices[0].message.content.strip()
+            if slide_response.choices and slide_response.choices[0].message.content
+            else ""
+        )
+
+        if not slide_content:
+            return PresentationResponse(
+                spoken_text=spoken_text,
+                slide=Slide(title="Summary", bullets=[]),
+                images=images,
+            )
+
+        slide_payload = _parse_slide_payload(slide_content)
+        slide = Slide(
+            title=slide_payload.title.strip() or "Summary",
+            bullets=[bullet.strip() for bullet in slide_payload.bullets if bullet.strip()],
+        )
+
+        return PresentationResponse(
+            spoken_text=spoken_text,
+            slide=slide,
+            images=images,
+        )
+
+    except Exception as e:
+        return PresentationResponse(
+            spoken_text=f"Unexpected error: {type(e).__name__}: {str(e)}",
+            slide=Slide(title="Error", bullets=[]),
+            images=[],
+        )

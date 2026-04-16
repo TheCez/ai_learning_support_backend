@@ -26,3 +26,104 @@
 - Added document readiness endpoint `GET /api/v1/courses/{course_id}/documents/{doc_id}/ready`; the test UI now shows a rotating indexing spinner and waits for vector readiness before querying.
 - The user-facing demo flow now uses `llm_api` as the only query surface: the Test UI posts `course_id + query` to `llm_api`, which internally fetches RAG results, synthesizes a human-readable answer, and returns only `answer` plus relevant `images`.
 - Root `docker-compose.yml` launches both APIs and injects `RAG_API_BASE_URL=http://rag_api:8000/api/v1` into `llm_api` so the demo flow works inside the shared Docker network.
+
+## llm_api Agent Interface (Documented Contract)
+
+### Purpose
+- `llm_api` is the user-facing answer synthesis layer.
+- It is the only query API the frontend should call for QA-style responses.
+- It hides raw retrieval chunks and returns a clean payload for the UI.
+
+### Tech Stack
+- FastAPI service (`llm_api/app/main.py`) with CORS enabled for browser clients.
+- `openai` Python SDK against an OpenAI-compatible endpoint.
+- `httpx` for internal retrieval calls to `rag_api`.
+- Pydantic v2 schemas for request/response validation.
+- Runtime/dependencies managed with `uv`.
+
+### Public Endpoints
+- `POST /generate_answer`
+  - Request JSON: `{"course_id": "string", "query": "string"}`
+  - Response JSON: `{"answer": "string", "images": ["string", "..."]}`
+- `POST /generate_quiz`
+  - Request JSON: `{"course_id": "string"}`
+  - Response JSON:
+    `{"quiz": [{"question": "string", "options": ["string", "string", "string", "string"], "answer_index": 0, "explanation": "string"}, "..."]}`
+  - Target behavior: return up to 10 validated MCQ items.
+- `POST /generate_presentation`
+  - Request JSON: `{"course_id": "string", "query": "string"}`
+  - Response JSON: `{"spoken_text": "string", "slide": {"title": "string", "bullets": ["string", "string"]}, "images": ["string", "..."]}`
+  - Target behavior: KI-Professor presentation mode—reuses answer generation and summarizes into a single slide with title + bullet points.
+
+### Response Contract for Frontend and Agents
+- Output must always be JSON with exactly the top-level fields `answer` and `images`.
+- `answer` is a synthesized, student-facing response.
+- `images` contains only selected relevant image URLs (not all retrieved images).
+- Raw retrieval chunks/scores must not be exposed by this API.
+
+### Internal Answering Flow
+1. Fetch retrieval results from `rag_api`:
+   - `GET /api/v1/courses/{course_id}/retrieve?query=...`
+2. Generate a concise grounded answer (JSON-only answer payload).
+3. Rank image candidates locally using keyword overlap and anatomy-term weighting.
+4. Run a second structured model step to choose only the best candidate image IDs.
+5. Map selected IDs back to image URLs and return final `{answer, images}`.
+6. Fallback behavior:
+   - if no retrieval results: return `This was not found in the uploaded material.` with `[]` images.
+   - if no image selected: return the top-ranked image as a safe fallback.
+
+### Environment Variables (`llm_api`)
+- `OPENAI_API_KEY`: key for OpenAI-compatible provider.
+- `OPENAI_BASE_URL`: provider base URL.
+- `OPENAI_MODEL`: model name used for both answer and image-selection steps.
+- `RAG_API_BASE_URL`: base URL of `rag_api` (default `http://rag_api:8000/api/v1` in Docker network).
+
+### Docker Integration Notes
+- `llm_api` is exposed on port `8001`.
+- Root compose injects `RAG_API_BASE_URL=http://rag_api:8000/api/v1`.
+- Service startup order in root compose ensures `llm_api` depends on `rag_api`.
+
+### Agent Guidance
+- Any user query flow should call `llm_api` endpoints first, not raw `/retrieve`, unless debugging retrieval.
+- Keep request payload minimal (`course_id`, `query`).
+- Preserve strict response shape to avoid frontend regressions.
+- If extending features (summary/quiz/multi-turn), maintain backward compatibility for existing `{answer, images}` consumers.
+
+## API Endpoint Reference (Frontend and Agent Contract)
+
+### rag_api (`http://localhost:8000/api/v1`)
+
+| Method | Path | Request Contract | Response Contract | Notes |
+|---|---|---|---|---|
+| `GET` | `/health` | None | `{"status": "healthy"}` | Health probe for service availability. |
+| `POST` | `/courses/{course_id}/documents` | `multipart/form-data` with `week` (int), `file` (PDF) | `{"message": "File uploaded. Ingestion started in background.", "metadata": {"course_id": "...", "week": 1, "doc_id": "...", "file_name": "...", "file_path": "...", "file_size": 12345}}` | Upload starts async ingestion and vector indexing. |
+| `GET` | `/courses/{course_id}/documents/{doc_id}/ready` | Path params only | `{"course_id": "...", "doc_id": "...", "ready": true/false, "indexed_chunks": 0}` | Use for polling readiness before querying. |
+| `GET` | `/courses/{course_id}/retrieve` | Query params: `query` (string, required), `limit` (int, optional, 1-20, default 5) | `{"results": [{"text": "...", "score": 0.0, "doc_id": "...", "page_no": 1, "week": 1, "image_url": "/api/v1/images/..." | null}]}` | Returns chunk-level retrieval output; `503` when vector DB unavailable. |
+| `GET` | `/rag-test-app` | None | HTML page | Frontend demo app entrypoint. |
+| `GET` | `/retrieve-ui` | None | HTML page | Raw retrieval debug UI. |
+| `GET` | `/images/{doc_id}/...` (mounted static under `/api/v1/images`) | None | Image bytes | Use image URLs returned from retrieval/llm_api directly. |
+
+### llm_api (`http://localhost:8001`)
+
+| Method | Path | Request Contract | Response Contract | Notes |
+|---|---|---|---|---|
+| `POST` | `/generate_answer` | JSON: `{"course_id": "string", "query": "string"}` | JSON: `{"answer": "string", "images": ["string", "..."]}` | Primary user-facing QA endpoint. |
+| `POST` | `/generate_quiz` | JSON: `{"course_id": "string"}` | JSON: `{"quiz": [{"question": "string", "options": ["string", "string", "string", "string"], "answer_index": 0, "explanation": "string"}, "..."]}` | Generates course-grounded quiz set (up to 10 MCQs). |
+| `POST` | `/generate_presentation` | JSON: `{"course_id": "string", "query": "string"}` | JSON: `{"spoken_text": "string", "slide": {"title": "string", "bullets": ["string", "..."]}, "images": ["string", "..."]}` | KI-Professor presentation mode: generates long-form answer, summarizes into single slide with title + 3-5 bullet points. |
+
+### Error Contract Summary
+
+| Service | Endpoint Pattern | Typical Error | Shape |
+|---|---|---|---|
+| `rag_api` | retrieval/readiness when vector DB down | `503` | `{"detail": "Vector database is currently unreachable."}` |
+| `rag_api` | upload with non-PDF | `400` | `{"detail": "Only PDF files are allowed."}` |
+| `llm_api` | schema validation | `422` | FastAPI validation error payload |
+
+### Frontend Integration Rules
+
+- Use `llm_api /generate_answer` for chat-style answer flows.
+- Use `llm_api /generate_quiz` for quiz screen flows.
+- Use `llm_api /generate_presentation` for KI-Professor presentation mode (single-slide lecture delivery).
+- Poll `rag_api /courses/{course_id}/documents/{doc_id}/ready` after uploads before enabling ask/quiz/presentation actions.
+- Render images from the `images` array as-is; URLs are already routable from `rag_api` static mount.
+- Treat `quiz` and presentation `slide` outputs as arrays/objects that may be minimal when indexed material is sparse.
