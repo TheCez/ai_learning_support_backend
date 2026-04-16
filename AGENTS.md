@@ -20,3 +20,7 @@
 - Retrieval endpoint is now backed by filtered vector search against `course_materials` with course-level isolation enforced through Qdrant payload filtering.
 - Retrieval now returns `503 Service Unavailable` with a clear message when Qdrant is unreachable or a connection error occurs during search.
 - The combined test UI is available at `/api/v1/rag-test-app` for uploading PDFs and running raw retrieval queries end-to-end.
+- Image-RAG support is being added: extracted PDF images are stored locally, captioned through an OpenAI-compatible Vision API, and indexed in Qdrant with `image_url` metadata.
+- Test UI now renders hybrid retrieval results visually: chunks with `image_url` display inline images and Vision-generated captions, while text-only chunks render as standard text cards.
+- Text chunks now inherit page-level `image_url` when a page contains extracted images, improving image visibility for text-led queries (e.g., "chambers").
+- Added document readiness endpoint `GET /api/v1/courses/{course_id}/documents/{doc_id}/ready`; the test UI now shows a rotating indexing spinner and waits for vector readiness before querying.

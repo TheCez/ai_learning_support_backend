@@ -5,14 +5,18 @@ services:
     build: .
     depends_on:
       - qdrant
+    env_file:
+      - .env
     ports:
       - "8000:8000"
     volumes:
       - ./data/raw_pdfs:/app/data/raw_pdfs
+      - ./data/extracted_images:/app/data/extracted_images
     environment:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
       - RAW_PDF_STORAGE_PATH=/app/data/raw_pdfs
+      - EXTRACTED_IMAGE_STORAGE_PATH=/app/data/extracted_images
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   qdrant:

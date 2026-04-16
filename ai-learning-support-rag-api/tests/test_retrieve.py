@@ -36,6 +36,7 @@ def test_retrieve_endpoint(monkeypatch):
                                     "doc_id": "doc-1.pdf",
                                     "page_no": 3,
                                     "week": 2,
+                                    "image_url": None,
                                 },
                             },
                         )()
@@ -58,6 +59,7 @@ def test_retrieve_endpoint(monkeypatch):
                 "doc_id": "doc-1.pdf",
                 "page_no": 3,
                 "week": 2,
+                "image_url": None,
             }
         ]
     }

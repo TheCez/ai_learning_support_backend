@@ -109,7 +109,31 @@ def search_vectors(query: str, course_id: str, limit: int = 5) -> list[dict[str,
                 "doc_id": payload.get("doc_id"),
                 "page_no": payload.get("page_no"),
                 "week": payload.get("week"),
+                "image_url": payload.get("image_url"),
             }
         )
 
     return mapped_results
+
+
+def count_vectors_for_doc(course_id: str, doc_id: str) -> int:
+    client = get_qdrant_client()
+    doc_filter = models.Filter(
+        must=[
+            models.FieldCondition(
+                key="course_id",
+                match=models.MatchValue(value=course_id),
+            ),
+            models.FieldCondition(
+                key="doc_id",
+                match=models.MatchValue(value=doc_id),
+            ),
+        ]
+    )
+
+    count_result = client.count(
+        collection_name=settings.qdrant_collection_name,
+        count_filter=doc_filter,
+        exact=True,
+    )
+    return int(count_result.count or 0)

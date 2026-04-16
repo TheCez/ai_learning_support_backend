@@ -7,6 +7,7 @@ class RetrievedChunk(BaseModel):
     doc_id: str = Field(..., description="Saved document identifier")
     page_no: int = Field(..., description="Source PDF page number")
     week: int = Field(..., description="Course week number")
+    image_url: str | None = Field(default=None, description="Optional local image URL for extracted PDF images")
 
 
 class RetrieveResponse(BaseModel):

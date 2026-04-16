@@ -10,6 +10,10 @@ def ensure_raw_pdf_storage() -> None:
     Path(settings.raw_pdf_storage_path).mkdir(parents=True, exist_ok=True)
 
 
+def ensure_extracted_image_storage() -> None:
+    Path(settings.extracted_image_storage_path).mkdir(parents=True, exist_ok=True)
+
+
 def _safe_suffix(file_name: str) -> str:
     suffix = Path(file_name).suffix.lower()
     return suffix if suffix == ".pdf" else ".pdf"

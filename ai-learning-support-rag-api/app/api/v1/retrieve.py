@@ -8,7 +8,7 @@ import app.services.vector_db as vector_db
 
 router = APIRouter()
 UI_FILE = Path(__file__).resolve().parents[2] / "static" / "retrieve_test_ui.html"
-RAG_TEST_APP_FILE = Path(__file__).resolve().parents[2] / "static" / "rag_test_app.html"
+RAG_TEST_APP_FILE = Path(__file__).resolve().parents[2] / "templates" / "index.html"
 
 
 @router.get("/retrieve-ui", include_in_schema=False)

@@ -2,8 +2,27 @@ from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Uploa
 
 from app.services.ingestion_pipeline import ingest_pdf_to_qdrant
 from app.services.local_storage import save_pdf
+import app.services.vector_db as vector_db
 
 router = APIRouter()
+
+
+@router.get("/courses/{course_id}/documents/{doc_id}/ready")
+async def document_index_ready(course_id: str, doc_id: str):
+    if not vector_db.probe_qdrant_connection():
+        raise HTTPException(status_code=503, detail="Vector database is currently unreachable.")
+
+    try:
+        indexed_chunks = vector_db.count_vectors_for_doc(course_id=course_id, doc_id=doc_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Vector database is currently unreachable.") from exc
+
+    return {
+        "course_id": course_id,
+        "doc_id": doc_id,
+        "ready": indexed_chunks > 0,
+        "indexed_chunks": indexed_chunks,
+    }
 
 @router.post("/courses/{course_id}/documents")
 async def upload_pdf(

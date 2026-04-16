@@ -8,7 +8,7 @@ from app.services.vector_db import get_embedding_model, upsert_points
 
 def ingest_pdf_to_qdrant(course_id: str, week: int, doc_id: str, file_path: str) -> None:
     try:
-        chunk_records = extract_page_chunks(file_path)
+        chunk_records = extract_page_chunks(file_path, doc_id=doc_id)
         if not chunk_records:
             return
 
@@ -27,11 +27,13 @@ def ingest_pdf_to_qdrant(course_id: str, week: int, doc_id: str, file_path: str)
                 "doc_id": doc_id,
                 "text": record["text"],
             }
+            if record.get("image_url"):
+                metadata["image_url"] = record["image_url"]
 
             point_id = str(
                 uuid.uuid5(
                     uuid.NAMESPACE_URL,
-                    f"{course_id}:{doc_id}:{page_no}:{chunk_index}",
+                    f"{course_id}:{doc_id}:{page_no}:{chunk_index}:{record.get('kind', 'text')}",
                 )
             )
 

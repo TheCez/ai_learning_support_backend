@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RAG Test App - Hybrid Image-RAG</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-100 text-slate-900">
+  <main class="mx-auto max-w-7xl p-6 md:p-8">
+    <header class="mb-6">
+      <h1 class="text-2xl font-bold">RAG Test App - Hybrid Image-RAG</h1>
+      <p class="mt-1 text-slate-600">Upload PDF content and visually inspect retrieved text and image-caption chunks.</p>
+    </header>
+
+    <section class="grid grid-cols-1 gap-6 xl:grid-cols-2">
+      <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 class="text-lg font-semibold">1) Upload Document</h2>
+
+        <label for="upload-course-id" class="mt-4 block text-sm font-medium text-slate-700">Course ID</label>
+        <input id="upload-course-id" type="text" value="test_course" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none" />
+
+        <div class="mt-3 grid grid-cols-2 gap-3">
+          <div>
+            <label for="upload-week" class="block text-sm font-medium text-slate-700">Week</label>
+            <input id="upload-week" type="number" min="1" value="1" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none" />
+          </div>
+          <div>
+            <label for="upload-api-base" class="block text-sm font-medium text-slate-700">API Base</label>
+            <input id="upload-api-base" type="text" value="/api/v1" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none" />
+          </div>
+        </div>
+
+        <label for="upload-file" class="mt-3 block text-sm font-medium text-slate-700">PDF File</label>
+        <input id="upload-file" type="file" accept="application/pdf" class="mt-1 block w-full rounded-lg border border-slate-300 p-2 text-sm" />
+
+        <button id="upload-btn" type="button" class="mt-4 inline-flex rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-60">Upload PDF</button>
+        <p id="upload-status" class="mt-2 text-sm text-slate-600"></p>
+        <div id="ingest-wait" class="mt-2 hidden items-center gap-2 text-sm text-amber-700">
+          <span class="h-4 w-4 animate-spin rounded-full border-2 border-amber-600 border-t-transparent"></span>
+          <span id="ingest-wait-text">Waiting for RAG DB to index new data...</span>
+        </div>
+
+        <div class="mt-4 rounded-lg bg-slate-900 p-3">
+          <pre id="upload-output" class="max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-200">{
+  "upload": "not started"
+}</pre>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 class="text-lg font-semibold">2) Retrieve Chunks</h2>
+
+        <label for="query-course-id" class="mt-4 block text-sm font-medium text-slate-700">Course ID</label>
+        <input id="query-course-id" type="text" value="test_course" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none" />
+
+        <div class="mt-3 grid grid-cols-2 gap-3">
+          <div>
+            <label for="query-limit" class="block text-sm font-medium text-slate-700">Limit</label>
+            <input id="query-limit" type="number" min="1" max="20" value="5" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none" />
+          </div>
+          <div>
+            <label for="query-api-base" class="block text-sm font-medium text-slate-700">API Base</label>
+            <input id="query-api-base" type="text" value="/api/v1" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none" />
+          </div>
+        </div>
+
+        <label for="query-text" class="mt-3 block text-sm font-medium text-slate-700">Query</label>
+        <input id="query-text" type="text" placeholder="Ask from your uploaded PDF" class="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none" />
+
+        <button id="query-btn" type="button" class="mt-4 inline-flex rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60">Retrieve Chunks</button>
+        <p id="query-status" class="mt-2 text-sm text-slate-600"></p>
+
+        <div class="mt-4 rounded-lg bg-slate-900 p-3">
+          <pre id="query-output" class="max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs text-slate-200">{
+  "results": []
+}</pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="mt-6 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <h2 class="text-lg font-semibold">3) Visual Results</h2>
+      <p class="mt-1 text-sm text-slate-600">Image chunks render inline with Vision captions. Text-only chunks are shown as standard cards.</p>
+      <div id="visual-results" class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2"></div>
+    </section>
+  </main>
+
+  <script>
+    const uploadBtn = document.getElementById("upload-btn");
+    const uploadCourseId = document.getElementById("upload-course-id");
+    const uploadWeek = document.getElementById("upload-week");
+    const uploadApiBase = document.getElementById("upload-api-base");
+    const uploadFile = document.getElementById("upload-file");
+    const uploadStatus = document.getElementById("upload-status");
+    const uploadOutput = document.getElementById("upload-output");
+
+    const queryBtn = document.getElementById("query-btn");
+    const queryCourseId = document.getElementById("query-course-id");
+    const queryLimit = document.getElementById("query-limit");
+    const queryApiBase = document.getElementById("query-api-base");
+    const queryText = document.getElementById("query-text");
+    const queryStatus = document.getElementById("query-status");
+    const queryOutput = document.getElementById("query-output");
+    const visualResults = document.getElementById("visual-results");
+    const ingestWait = document.getElementById("ingest-wait");
+    const ingestWaitText = document.getElementById("ingest-wait-text");
+
+    function setStatus(el, text, kind) {
+      const styles = {
+        good: "text-emerald-700",
+        bad: "text-rose-700",
+        default: "text-slate-600",
+      };
+      el.textContent = text;
+      el.className = `mt-2 text-sm ${styles[kind] || styles.default}`;
+    }
+
+    function cardMeta(chunk) {
+      return `Doc: ${chunk.doc_id} | Page: ${chunk.page_no} | Week: ${chunk.week} | Score: ${Number(chunk.score || 0).toFixed(4)}`;
+    }
+
+    function showIngestWait(text) {
+      ingestWait.classList.remove("hidden");
+      ingestWait.classList.add("flex");
+      ingestWaitText.textContent = text;
+    }
+
+    function hideIngestWait() {
+      ingestWait.classList.add("hidden");
+      ingestWait.classList.remove("flex");
+    }
+
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    async function waitForDocumentReady(apiBase, courseId, docId) {
+      const readyUrl = `${apiBase}/courses/${encodeURIComponent(courseId)}/documents/${encodeURIComponent(docId)}/ready`;
+      const maxAttempts = 45;
+
+      queryBtn.disabled = true;
+      showIngestWait("Waiting for RAG DB to index new data...");
+
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          const res = await fetch(readyUrl, { method: "GET", headers: { "Accept": "application/json" } });
+          const data = await res.json();
+
+          if (res.ok && data.ready) {
+            hideIngestWait();
+            queryBtn.disabled = false;
+            setStatus(uploadStatus, `Indexed and ready (${data.indexed_chunks} chunk(s)).`, "good");
+            return true;
+          }
+
+          if (res.ok) {
+            const chunkCount = Number(data.indexed_chunks || 0);
+            showIngestWait(`Indexing in progress... (${chunkCount} chunk(s) indexed)`);
+          } else if (res.status === 503) {
+            showIngestWait("Vector DB waking up... retrying");
+          }
+        } catch (_) {
+          showIngestWait("Checking index status...");
+        }
+
+        await sleep(1500);
+      }
+
+      hideIngestWait();
+      queryBtn.disabled = false;
+      setStatus(uploadStatus, "Upload completed, but indexing is taking longer than expected. You can still try querying.", "default");
+      return false;
+    }
+
+    function renderVisualResults(results) {
+      visualResults.innerHTML = "";
+
+      if (!Array.isArray(results) || results.length === 0) {
+        visualResults.innerHTML = '<div class="rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">No chunks returned yet.</div>';
+        return;
+      }
+
+      for (const chunk of results) {
+        const card = document.createElement("article");
+        card.className = "rounded-xl border border-slate-200 bg-slate-50 p-4 shadow-sm";
+
+        if (chunk.image_url) {
+          card.innerHTML = `
+            <img
+              src="${chunk.image_url}"
+              alt="Retrieved document image"
+              class="max-h-64 object-contain rounded mb-4 w-full border border-slate-200 bg-white"
+              loading="lazy"
+            />
+            <p class="mb-3 text-sm leading-6 text-slate-800">${chunk.text || ""}</p>
+            <p class="text-xs text-slate-500">${cardMeta(chunk)}</p>
+          `;
+        } else {
+          card.innerHTML = `
+            <p class="mb-3 text-sm leading-6 text-slate-800">${chunk.text || ""}</p>
+            <p class="text-xs text-slate-500">${cardMeta(chunk)}</p>
+          `;
+        }
+
+        visualResults.appendChild(card);
+      }
+    }
+
+    async function uploadPdf() {
+      const courseId = uploadCourseId.value.trim();
+      const week = uploadWeek.value.trim();
+      const apiBase = uploadApiBase.value.trim() || "/api/v1";
+      const file = uploadFile.files[0];
+
+      if (!courseId || !week || !file) {
+        setStatus(uploadStatus, "Course ID, week, and file are required.", "bad");
+        return;
+      }
+
+      if (!file.name.toLowerCase().endsWith(".pdf")) {
+        setStatus(uploadStatus, "Please choose a PDF file.", "bad");
+        return;
+      }
+
+      uploadBtn.disabled = true;
+      setStatus(uploadStatus, "Uploading document...", "default");
+
+      const form = new FormData();
+      form.append("week", week);
+      form.append("file", file);
+
+      const url = `${apiBase}/courses/${encodeURIComponent(courseId)}/documents`;
+
+      try {
+        const res = await fetch(url, { method: "POST", body: form });
+        const data = await res.json();
+        uploadOutput.textContent = JSON.stringify(data, null, 2);
+
+        if (!res.ok) {
+          setStatus(uploadStatus, `Upload failed (${res.status}).`, "bad");
+          return;
+        }
+
+        setStatus(uploadStatus, "Upload accepted. Background ingestion started.", "default");
+        if (!queryCourseId.value.trim()) {
+          queryCourseId.value = courseId;
+        }
+
+        const docId = data && data.metadata ? data.metadata.doc_id : "";
+        if (docId) {
+          await waitForDocumentReady(apiBase, courseId, docId);
+        }
+      } catch (error) {
+        uploadOutput.textContent = JSON.stringify({ error: String(error) }, null, 2);
+        setStatus(uploadStatus, "Upload request failed.", "bad");
+        hideIngestWait();
+      } finally {
+        uploadBtn.disabled = false;
+      }
+    }
+
+    async function retrieveChunks() {
+      const courseId = queryCourseId.value.trim();
+      const query = queryText.value.trim();
+      const limit = Number(queryLimit.value || 5);
+      const apiBase = queryApiBase.value.trim() || "/api/v1";
+
+      if (!courseId || !query) {
+        setStatus(queryStatus, "Course ID and query are required.", "bad");
+        return;
+      }
+
+      queryBtn.disabled = true;
+      setStatus(queryStatus, "Retrieving chunks...", "default");
+
+      const url = `${apiBase}/courses/${encodeURIComponent(courseId)}/retrieve?query=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`;
+
+      try {
+        const res = await fetch(url, { method: "GET", headers: { "Accept": "application/json" } });
+        const data = await res.json();
+        queryOutput.textContent = JSON.stringify(data, null, 2);
+
+        if (!res.ok) {
+          setStatus(queryStatus, `Retrieve failed (${res.status}).`, "bad");
+          renderVisualResults([]);
+          return;
+        }
+
+        const results = Array.isArray(data.results) ? data.results : [];
+        renderVisualResults(results);
+
+        setStatus(queryStatus, `Success. Retrieved ${results.length} chunk(s).`, "good");
+      } catch (error) {
+        queryOutput.textContent = JSON.stringify({ error: String(error) }, null, 2);
+        setStatus(queryStatus, "Retrieve request failed.", "bad");
+        renderVisualResults([]);
+      } finally {
+        queryBtn.disabled = false;
+      }
+    }
+
+    uploadBtn.addEventListener("click", uploadPdf);
+    queryBtn.addEventListener("click", retrieveChunks);
+    queryText.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        retrieveChunks();
+      }
+    });
+
+    renderVisualResults([]);
+  </script>
+</body>
+</html>
