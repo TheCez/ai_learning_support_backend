@@ -1,0 +1,28 @@
+[project]
+name = "ai-learning-support-rag-api"
+version = "0.1.0"
+description = "AI Learning Support RAG API"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+	"fastapi>=0.115.0,<1.0.0",
+	"uvicorn[standard]>=0.30.0,<1.0.0",
+	"python-multipart>=0.0.9,<1.0.0",
+	"pymupdf>=1.24.0,<2.0.0",
+	"pydantic>=2.7.0,<3.0.0",
+	"qdrant-client>=1.11.0,<2.0.0",
+	"fastembed>=0.3.6,<1.0.0",
+	"langchain-text-splitters>=0.3.0,<1.0.0",
+]
+
+[dependency-groups]
+dev = [
+	"pytest>=8.0.0,<9.0.0",
+]
+
+[tool.uv]
+package = false
+
+[build-system]
+requires = ["hatchling>=1.25.0"]
+build-backend = "hatchling.build"
