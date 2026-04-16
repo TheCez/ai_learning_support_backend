@@ -25,13 +25,15 @@ def get_embedding_model() -> TextEmbedding:
     return TextEmbedding(model_name=settings.embedding_model)
 
 
-def ensure_collection() -> None:
+def ensure_collection(reset_existing: bool = False) -> None:
     try:
         client = get_qdrant_client()
         collection_name = settings.qdrant_collection_name
 
         if client.collection_exists(collection_name=collection_name):
-            return
+            if not reset_existing:
+                return
+            client.delete_collection(collection_name=collection_name)
 
         embedding_model = get_embedding_model()
         vector_size = len(next(embedding_model.embed(["dimension probe"])))
@@ -60,7 +62,8 @@ def initialize_qdrant() -> None:
         logger.warning("Qdrant connection failed - Vector search will be unavailable")
         return
 
-    ensure_collection()
+    # Keep DB state aligned with startup file cleanup so stored image URLs stay valid.
+    ensure_collection(reset_existing=True)
 
 
 def upsert_points(points: list[models.PointStruct]) -> None:

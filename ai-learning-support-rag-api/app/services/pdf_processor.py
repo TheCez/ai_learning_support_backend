@@ -54,11 +54,46 @@ def _compute_focus_clip(page: fitz.Page, image_xrefs: list[int]) -> fitz.Rect | 
     for rect in image_rects[1:]:
         focus_rect |= rect
 
+    page_width = page.rect.width
+    page_height = page.rect.height
+
+    # Search nearby text blocks for figure labels while avoiding full paragraph regions.
+    nearby_zone = fitz.Rect(
+        max(page.rect.x0, focus_rect.x0 - page_width * 0.18),
+        max(page.rect.y0, focus_rect.y0 - page_height * 0.14),
+        min(page.rect.x1, focus_rect.x1 + page_width * 0.18),
+        min(page.rect.y1, focus_rect.y1 + page_height * 0.18),
+    )
+
+    for block in page.get_text("blocks"):
+        block_rect = fitz.Rect(block[:4])
+        if block_rect.is_empty or not block_rect.intersects(nearby_zone):
+            continue
+
+        block_text = str(block[4]).strip()
+        if not block_text:
+            continue
+
+        alnum_count = sum(1 for char in block_text if char.isalnum())
+        # Ignore tiny punctuation-only artifacts like standalone bullet dots.
+        if alnum_count < 3:
+            continue
+
+        # Keep short label-like text, but drop paragraph-sized regions.
+        if len(block_text) > 120 or block_rect.width > page_width * 0.42 or block_rect.height > page_height * 0.18:
+            continue
+
+        # Drop distant right-column text even if it is short.
+        if block_rect.x0 > focus_rect.x1 + page_width * 0.10:
+            continue
+
+        focus_rect |= block_rect
+
     return fitz.Rect(
-        max(page.rect.x0, focus_rect.x0 - 12),
-        max(page.rect.y0, focus_rect.y0 - 12),
-        min(page.rect.x1, focus_rect.x1 + 12),
-        min(page.rect.y1, focus_rect.y1 + 12),
+        max(page.rect.x0, focus_rect.x0 - 18),
+        max(page.rect.y0, focus_rect.y0 - 18),
+        min(page.rect.x1, focus_rect.x1 + 18),
+        min(page.rect.y1, focus_rect.y1 + 18),
     )
 
 

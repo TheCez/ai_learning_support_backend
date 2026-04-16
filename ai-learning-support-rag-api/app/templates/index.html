@@ -191,6 +191,7 @@
               src="${chunk.image_url}"
               alt="Retrieved document image"
               class="max-h-64 object-contain rounded mb-4 w-full border border-slate-200 bg-white"
+              onerror="this.style.display='none';"
               loading="lazy"
             />
             <p class="mb-3 text-sm leading-6 text-slate-800">${chunk.text || ""}</p>
