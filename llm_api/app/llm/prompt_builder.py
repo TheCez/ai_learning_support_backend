@@ -193,24 +193,25 @@ Instructions:
     return system_prompt, user_prompt
 
 
-def build_slide_summarization_messages(spoken_text: str, persona: str = "standard"):
+def build_slide_summarization_messages(spoken_text: str, image_urls: list[str], persona: str = "standard"):
     normalized_persona = (persona or "standard").strip().lower()
+    image_context = "\n".join(f"- {url}" for url in image_urls) if image_urls else "None"
+
     if normalized_persona == "ki_professor":
         system_prompt = (
-            "You are Prof. Wagner, a knowledgeable nursing professor and presentation designer. "
-            "Create a single slide that teaches the core nursing concepts clearly and accurately. "
-            "Extract the core concepts into a presentation slide. "
-            "CRITICAL CONSTRAINT: Bullet points must be extremely concise fragments, NOT full sentences. "
-            "Maximum 4 to 7 words per bullet. "
-            "Example: Use 'Four muscular chambers' instead of 'The heart is a muscular pump with four chambers'. "
+            "You are an expert presentation designer. "
+            "Break the professor's lecture down into a logical sequence of 2 to 4 presentation slides. "
+            "Each slide must have a title, an array of 3-5 concise bullet fragments (NOT full sentences), and an image_url. "
+            "CRITICAL CONSTRAINT: bullet fragments must be maximum 7 words each. "
+            "Example: Use 'Four muscular chambers' instead of full-sentence bullets. "
             "Do NOT mention 'pages', 'documents', 'uploaded material', or 'diagrams'. "
             "Do not tell the student where to look. "
-            "Synthesize the transcript into concept-first teaching bullets that explain what the concepts are and how they work."
+            "Use only the provided image URL candidates; if none fit a specific slide, set image_url to null."
         )
     else:
         system_prompt = (
             "You are an expert presentation designer and educator. "
-            "Your task is to convert a detailed lecture transcript into a concise, visually-friendly presentation slide. "
+            "Your task is to convert a detailed lecture transcript into a concise, visually-friendly multi-slide presentation. "
             "Extract core concepts and present them as clear, memorable bullet points."
         )
 
@@ -218,18 +219,23 @@ def build_slide_summarization_messages(spoken_text: str, persona: str = "standar
 Lecture Transcript:
 {spoken_text}
 
+Available Image URL Candidates (use only these exact values):
+{image_context}
+
 Instructions:
-- Create a single presentation slide from the transcript.
-- The slide must have a clear, concise title (5-10 words).
-- Generate 3 to 5 short bullet points that capture the core concepts.
-- Each bullet point must be a concise fragment, not a full sentence.
-- Each bullet point must be 4 to 7 words only.
+- Break the lecture into a logical sequence of 2 to 4 slides.
+- Each slide must have: title, bullets, image_url.
+- title should be clear and concise (3-10 words).
+- bullets must contain 3 to 5 items per slide.
+- Each bullet must be a concise fragment, not a full sentence.
+- Each bullet must be 4 to 7 words only.
 - Prioritize key facts and clinical relevance.
 - Use simple, student-friendly language.
 - Do NOT mention pages, documents, uploaded material, or diagrams.
 - Do NOT tell the student where to look.
-- Return strict JSON with exactly two keys: title and bullets.
-- bullets must be an array of strings.
+- image_url must be either one provided candidate URL or null.
+- Return strict JSON with exactly one key: slides.
+- slides must be an array of objects with keys: title, bullets, image_url.
 """
 
     return system_prompt, user_prompt

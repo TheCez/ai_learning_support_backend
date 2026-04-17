@@ -415,10 +415,10 @@ def _parse_slide_payload(content: str) -> SlidePayload:
 
 def generate_presentation(course_id: str, query: str, persona: str = "standard") -> PresentationResponse:
     """
-    Generate a presentation slide with accompanying spoken text and images.
+    Generate a presentation deck with accompanying spoken text and images.
     
     Step 1: Reuse generate_answer logic to get spoken_text and images.
-    Step 2: Summarize spoken_text into a single presentation slide.
+    Step 2: Summarize spoken_text into 2-4 presentation slides.
     """
     try:
         # Step 1: Generate the full answer using existing logic
@@ -426,17 +426,18 @@ def generate_presentation(course_id: str, query: str, persona: str = "standard")
         spoken_text = answer_response.answer
         images = _sanitize_image_urls(answer_response.images)
 
-        # Step 2: Summarize the answer into a presentation slide
+        # Step 2: Summarize the answer into presentation slides
         if spoken_text == "This was not found in the uploaded material.":
-            # No content to summarize; return minimal slide
+            # No content to summarize; return minimal empty presentation
             return PresentationResponse(
                 spoken_text=spoken_text,
-                slide=Slide(title="No Content", bullets=[]),
+                slides=[],
                 images=[],
             )
 
         slide_system_prompt, slide_user_prompt = build_slide_summarization_messages(
             spoken_text=spoken_text,
+            image_urls=images,
             persona=persona,
         )
 
@@ -459,25 +460,36 @@ def generate_presentation(course_id: str, query: str, persona: str = "standard")
         if not slide_content:
             return PresentationResponse(
                 spoken_text=spoken_text,
-                slide=Slide(title="Summary", bullets=[]),
+                slides=[],
                 images=images,
             )
 
         slide_payload = _parse_slide_payload(slide_content)
-        slide = Slide(
-            title=slide_payload.title.strip() or "Summary",
-            bullets=[bullet.strip() for bullet in slide_payload.bullets if bullet.strip()],
-        )
+        sanitized_slides: list[Slide] = []
+        for raw_slide in slide_payload.slides[:4]:
+            title = str(raw_slide.title or "").strip() or "Summary"
+            bullets = [str(bullet).strip() for bullet in raw_slide.bullets if str(bullet).strip()]
+            image_url = str(raw_slide.image_url or "").strip() if raw_slide.image_url else None
+            if image_url and not _is_allowed_image_url(image_url):
+                image_url = None
+
+            sanitized_slides.append(
+                Slide(
+                    title=title,
+                    bullets=bullets[:5],
+                    image_url=image_url,
+                )
+            )
 
         return PresentationResponse(
             spoken_text=spoken_text,
-            slide=slide,
+            slides=sanitized_slides,
             images=images,
         )
 
     except Exception as e:
         return PresentationResponse(
             spoken_text=f"Unexpected error: {type(e).__name__}: {str(e)}",
-            slide=Slide(title="Error", bullets=[]),
+            slides=[],
             images=[],
         )

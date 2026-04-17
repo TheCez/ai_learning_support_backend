@@ -63,6 +63,7 @@ class LLMResponse(BaseModel):
 class Slide(BaseModel):
     title: str
     bullets: List[str] = Field(default_factory=list)
+    image_url: str | None = None
 
 
 class PresentationRequest(BaseModel):
@@ -73,10 +74,9 @@ class PresentationRequest(BaseModel):
 
 class PresentationResponse(BaseModel):
     spoken_text: str
-    slide: Slide
+    slides: List[Slide] = Field(default_factory=list)
     images: List[str] = Field(default_factory=list)
 
 
 class SlidePayload(BaseModel):
-    title: str
-    bullets: List[str] = Field(default_factory=list)
+    slides: List[Slide] = Field(default_factory=list)
