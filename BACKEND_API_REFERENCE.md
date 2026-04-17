@@ -8,7 +8,8 @@ Request JSON:
 {
   "course_id": "string",
   "query": "string",
-  "persona": "standard|ki_professor"
+  "persona": "standard|ki_professor",
+  "user_name": "string"
 }
 ```
 
@@ -22,6 +23,7 @@ Response JSON:
 
 Notes:
 - `persona` is optional and defaults to `standard`.
+- `user_name` is optional and can be provided by frontend for personalized greeting responses.
 - `course_id="all"` enables global cross-course retrieval.
 - `images` are sanitized and only trusted local paths are returned.
 
@@ -53,7 +55,8 @@ Request JSON:
 {
   "course_id": "string",
   "query": "string",
-  "persona": "standard|ki_professor"
+  "persona": "standard|ki_professor",
+  "user_name": "string"
 }
 ```
 
@@ -82,6 +85,7 @@ Response JSON:
 
 Notes:
 - `slides` is an array of 2-4 slides, each with its own narration.
+- `user_name` is optional and used to personalize greeting-only responses.
 - Each slide object contains:
   - `title`: string (3-10 words)
   - `bullets`: array of 3-5 concise bullet fragments (4-7 words each)
@@ -202,3 +206,14 @@ Query params:
 Notes:
 - `course_id="all"` bypasses course filter for global search.
 - Retrieval can return `503` if vector DB is unreachable.
+
+## KI Robustness Rules
+
+- The KI-Professor interaction is study-scoped and not intended for open-ended personal chat.
+- Greeting-only messages (for example: `hello`, `hallo`, `hi`, optionally with a name) receive a friendly greeting response.
+- Off-topic or non-study personal chat requests are blocked with a study-focus response.
+
+Standard study-focus response behavior:
+- The agent responds with a message equivalent to:
+  `I am here to help you study for course/module '<course_id>'. Please ask a study-related question from your uploaded material.`
+- This applies to answer and presentation flows so users are redirected back to course learning tasks.

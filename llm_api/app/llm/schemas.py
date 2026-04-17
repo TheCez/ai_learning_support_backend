@@ -8,6 +8,7 @@ class AskRequest(BaseModel):
     course_id: str
     query: str
     persona: str = "standard"
+    user_name: str | None = None
 
 
 class AskResponse(BaseModel):
@@ -160,6 +161,7 @@ class PresentationRequest(BaseModel):
     course_id: str
     query: str
     persona: str = "standard"
+    user_name: str | None = None
 
 
 class PresentationResponse(BaseModel):

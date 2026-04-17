@@ -97,6 +97,28 @@ GREETING_TOKENS = {
     "moin",
 }
 
+OFF_TOPIC_PATTERNS = [
+    r"\bhow are you\b",
+    r"\bwho are you\b",
+    r"\btell me about yourself\b",
+    r"\bwhat is your name\b",
+    r"\byour favorite\b",
+    r"\bfavorite (movie|music|song|food|color)\b",
+    r"\bdo you (love|like|hate)\b",
+    r"\bdate me\b",
+    r"\bmarry me\b",
+    r"\bwhere do you live\b",
+    r"\bwhat are you doing\b",
+    r"\bmake me laugh\b",
+    r"\bwrite a poem\b",
+    r"\btell me a joke\b",
+    r"\bweather\b",
+    r"\bfootball\b",
+    r"\bcricket\b",
+    r"\bmovie\b",
+    r"\bmusic\b",
+]
+
 
 def _extract_name_from_query(query: str) -> str | None:
     lowered = (query or "").strip()
@@ -114,6 +136,18 @@ def _extract_name_from_query(query: str) -> str | None:
             name = match.group(1).strip()
             return name[:1].upper() + name[1:]
     return None
+
+
+def _normalize_user_name(user_name: str | None) -> str | None:
+    if not user_name:
+        return None
+
+    cleaned = re.sub(r"[^A-Za-z\-']", "", str(user_name).strip())
+    if not cleaned:
+        return None
+
+    cleaned = cleaned[:32]
+    return cleaned[:1].upper() + cleaned[1:]
 
 
 def _is_greeting_only_query(query: str) -> bool:
@@ -142,8 +176,8 @@ def _is_greeting_only_query(query: str) -> bool:
     return len(non_greeting_words) == 0
 
 
-def _build_professor_greeting(query: str, persona: str = "standard") -> str:
-    name = _extract_name_from_query(query)
+def _build_professor_greeting(query: str, persona: str = "standard", user_name: str | None = None) -> str:
+    name = _normalize_user_name(user_name) or _extract_name_from_query(query)
     if name:
         return (
             f"Hallo {name}, schoen, dass du da bist. "
@@ -160,6 +194,48 @@ def _build_professor_greeting(query: str, persona: str = "standard") -> str:
         )
 
     return "Hello. I am ready to help. Ask me a question about your course material any time."
+
+
+def _is_off_topic_query(query: str) -> bool:
+    normalized = (query or "").strip().lower()
+    if not normalized or _is_greeting_only_query(normalized):
+        return False
+
+    for pattern in OFF_TOPIC_PATTERNS:
+        if re.search(pattern, normalized, flags=re.IGNORECASE):
+            return True
+
+    # If query has no clear academic intent markers, treat as potentially off-topic.
+    academic_markers = {
+        "course",
+        "module",
+        "chapter",
+        "lecture",
+        "study",
+        "explain",
+        "summarize",
+        "summary",
+        "quiz",
+        "flashcard",
+        "nursing",
+        "anatomy",
+        "physiology",
+        "clinical",
+        "heart",
+        "blood",
+        "ventricle",
+        "atrium",
+    }
+    words = set(re.findall(r"[a-zA-Z]+", normalized))
+    return len(words & academic_markers) == 0
+
+
+def _build_study_only_reply(course_id: str) -> str:
+    module_name = (course_id or "your module").strip() or "your module"
+    return (
+        f"I am here to help you study for course/module '{module_name}'. "
+        "Please ask a study-related question from your uploaded material."
+    )
 
 
 def _tokenize(text: str) -> set[str]:
@@ -420,10 +496,21 @@ def _fetch_quiz_results(course_id: str) -> list[dict[str, object]]:
     return merged
 
 
-def generate_answer(course_id: str, query: str, persona: str = "standard") -> AskResponse:
+def generate_answer(
+    course_id: str,
+    query: str,
+    persona: str = "standard",
+    user_name: str | None = None,
+) -> AskResponse:
     try:
         if _is_greeting_only_query(query):
-            return AskResponse(answer=_build_professor_greeting(query=query, persona=persona), images=[])
+            return AskResponse(
+                answer=_build_professor_greeting(query=query, persona=persona, user_name=user_name),
+                images=[],
+            )
+
+        if _is_off_topic_query(query):
+            return AskResponse(answer=_build_study_only_reply(course_id=course_id), images=[])
 
         results = fetch_retrieval_results(course_id=course_id, query=query)
         if not results:
@@ -733,7 +820,12 @@ def _build_fallback_slide(spoken_text: str, results: list[dict[str, object]]) ->
     )
 
 
-def generate_presentation(course_id: str, query: str, persona: str = "standard") -> PresentationResponse:
+def generate_presentation(
+    course_id: str,
+    query: str,
+    persona: str = "standard",
+    user_name: str | None = None,
+) -> PresentationResponse:
     """
     Generate a presentation deck where each slide contains its own narration.
     
@@ -745,7 +837,7 @@ def generate_presentation(course_id: str, query: str, persona: str = "standard")
     """
     try:
         if _is_greeting_only_query(query):
-            greeting_text = _build_professor_greeting(query=query, persona=persona)
+            greeting_text = _build_professor_greeting(query=query, persona=persona, user_name=user_name)
             return PresentationResponse(
                 slides=[
                     Slide(
@@ -759,13 +851,33 @@ def generate_presentation(course_id: str, query: str, persona: str = "standard")
                 images=[],
             )
 
+        if _is_off_topic_query(query):
+            off_topic_text = _build_study_only_reply(course_id=course_id)
+            return PresentationResponse(
+                slides=[
+                    Slide(
+                        title="Study Focus",
+                        bullets=["Please ask a study-related question"],
+                        image_url=None,
+                        spoken_text=off_topic_text,
+                        source_page=None,
+                    )
+                ],
+                images=[],
+            )
+
         # Step 1: Fetch reliable context
         results = fetch_retrieval_results(course_id=course_id, query=query)
         if not results:
             return PresentationResponse(slides=[], images=[])
 
         # Step 2: Generate a complete answer to establish narrative flow
-        answer_response = generate_answer(course_id=course_id, query=query, persona=persona)
+        answer_response = generate_answer(
+            course_id=course_id,
+            query=query,
+            persona=persona,
+            user_name=user_name,
+        )
         spoken_text = answer_response.answer
         images = _sanitize_image_urls(answer_response.images)
 
