@@ -139,6 +139,21 @@
       margin-top: 14px;
     }
 
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .actions button {
+      margin-top: 0;
+    }
+
+    .subtle {
+      background: #0e7490;
+    }
+
     .hint {
       margin-top: 8px;
       font-size: 0.85rem;
@@ -149,6 +164,10 @@
       .grid {
         grid-template-columns: 1fr;
       }
+
+      .actions {
+        grid-template-columns: 1fr;
+      }
     }
   </style>
 </head>
@@ -156,7 +175,7 @@
   <div class="wrap">
     <div class="header">
       <h1>RAG Test App</h1>
-      <p>1) Upload a PDF document, 2) ask a query, 3) see raw retrieval chunks JSON.</p>
+      <p>Upload PDFs, check readiness, and manually test retrieve, answer, quiz, and KI-Professor presentation APIs.</p>
     </div>
 
     <div class="grid">
@@ -180,6 +199,11 @@
         <input id="upload-file" type="file" accept="application/pdf" />
 
         <button id="upload-btn" type="button">Upload PDF</button>
+        <button id="ready-btn" class="subtle" type="button">Check Readiness</button>
+
+        <label for="ready-doc-id">Doc ID (for readiness)</label>
+        <input id="ready-doc-id" type="text" placeholder="Auto-filled from upload response metadata.doc_id" />
+
         <div id="upload-status" class="status"></div>
 
         <div class="panel">
@@ -220,9 +244,42 @@
     </div>
 
     <section class="card full">
+      <h2>LLM API Tester</h2>
+
+      <div class="row">
+        <div>
+          <label for="llm-course-id">Course ID</label>
+          <input id="llm-course-id" type="text" value="test_course" />
+        </div>
+        <div>
+          <label for="llm-api-base">LLM API Base</label>
+          <input id="llm-api-base" type="text" value="http://localhost:8001" />
+        </div>
+      </div>
+
+      <label for="llm-query">Query (for answer and presentation)</label>
+      <input id="llm-query" type="text" placeholder="e.g. Explain the main chambers of the heart" />
+
+      <div class="actions">
+        <button id="answer-btn" type="button">Generate Answer</button>
+        <button id="quiz-btn" type="button">Generate Quiz</button>
+        <button id="presentation-btn" type="button">Generate Presentation</button>
+      </div>
+
+      <div id="llm-status" class="status"></div>
+
+      <div class="panel">
+        <pre id="llm-output">{
+  "result": "not started"
+}</pre>
+      </div>
+    </section>
+
+    <section class="card full">
       <h2>Quick Notes</h2>
-      <div class="hint">After upload, wait a few seconds for background ingestion before querying.</div>
-      <div class="hint">This page intentionally shows raw JSON so you can debug exact payloads and chunk scores.</div>
+      <div class="hint">After upload, use Check Readiness until ready=true before running retrieval, answer, quiz, or presentation.</div>
+      <div class="hint">LLM API routes are called directly from your browser at http://localhost:8001 and return raw JSON for debugging.</div>
+      <div class="hint">This UI intentionally shows exact request outputs so you can manually validate payload shape and behavior.</div>
     </section>
   </div>
 
@@ -232,6 +289,8 @@
     const uploadWeek = document.getElementById("upload-week");
     const uploadApiBase = document.getElementById("upload-api-base");
     const uploadFile = document.getElementById("upload-file");
+    const readyBtn = document.getElementById("ready-btn");
+    const readyDocId = document.getElementById("ready-doc-id");
     const uploadStatus = document.getElementById("upload-status");
     const uploadOutput = document.getElementById("upload-output");
 
@@ -243,9 +302,24 @@
     const queryStatus = document.getElementById("query-status");
     const queryOutput = document.getElementById("query-output");
 
+    const llmCourseId = document.getElementById("llm-course-id");
+    const llmApiBase = document.getElementById("llm-api-base");
+    const llmQuery = document.getElementById("llm-query");
+    const answerBtn = document.getElementById("answer-btn");
+    const quizBtn = document.getElementById("quiz-btn");
+    const presentationBtn = document.getElementById("presentation-btn");
+    const llmStatus = document.getElementById("llm-status");
+    const llmOutput = document.getElementById("llm-output");
+
     function setStatus(el, text, kind) {
       el.textContent = text;
       el.className = "status" + (kind ? " " + kind : "");
+    }
+
+    function setLlmButtonsDisabled(disabled) {
+      answerBtn.disabled = disabled;
+      quizBtn.disabled = disabled;
+      presentationBtn.disabled = disabled;
     }
 
     async function uploadPdf() {
@@ -284,14 +358,58 @@
         }
 
         setStatus(uploadStatus, "Upload accepted. Background ingestion started.", "good");
+        if (data && data.metadata && data.metadata.doc_id) {
+          readyDocId.value = String(data.metadata.doc_id);
+        }
         if (!queryCourseId.value.trim()) {
           queryCourseId.value = courseId;
+        }
+        if (!llmCourseId.value.trim()) {
+          llmCourseId.value = courseId;
         }
       } catch (error) {
         uploadOutput.textContent = JSON.stringify({ error: String(error) }, null, 2);
         setStatus(uploadStatus, "Upload request failed.", "bad");
       } finally {
         uploadBtn.disabled = false;
+      }
+    }
+
+    async function checkReadiness() {
+      const courseId = uploadCourseId.value.trim();
+      const docId = readyDocId.value.trim();
+      const apiBase = uploadApiBase.value.trim() || "/api/v1";
+
+      if (!courseId || !docId) {
+        setStatus(uploadStatus, "Course ID and Doc ID are required for readiness check.", "bad");
+        return;
+      }
+
+      readyBtn.disabled = true;
+      setStatus(uploadStatus, "Checking readiness...", "");
+
+      const url = `${apiBase}/courses/${encodeURIComponent(courseId)}/documents/${encodeURIComponent(docId)}/ready`;
+
+      try {
+        const res = await fetch(url, { method: "GET", headers: { "Accept": "application/json" } });
+        const data = await res.json();
+        uploadOutput.textContent = JSON.stringify(data, null, 2);
+
+        if (!res.ok) {
+          setStatus(uploadStatus, `Readiness check failed (${res.status}).`, "bad");
+          return;
+        }
+
+        if (data.ready) {
+          setStatus(uploadStatus, `Ready. Indexed chunks: ${data.indexed_chunks || 0}.`, "good");
+        } else {
+          setStatus(uploadStatus, `Still indexing. Indexed chunks: ${data.indexed_chunks || 0}.`, "");
+        }
+      } catch (error) {
+        uploadOutput.textContent = JSON.stringify({ error: String(error) }, null, 2);
+        setStatus(uploadStatus, "Readiness request failed.", "bad");
+      } finally {
+        readyBtn.disabled = false;
       }
     }
 
@@ -331,12 +449,93 @@
       }
     }
 
+    async function callLlmEndpoint(path, body, successLabel) {
+      const base = llmApiBase.value.trim() || "http://localhost:8001";
+      const url = `${base.replace(/\/$/, "")}${path}`;
+
+      setLlmButtonsDisabled(true);
+      setStatus(llmStatus, `Calling ${path}...`, "");
+
+      try {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
+
+        const data = await res.json();
+        llmOutput.textContent = JSON.stringify(data, null, 2);
+
+        if (!res.ok) {
+          setStatus(llmStatus, `${successLabel} failed (${res.status}).`, "bad");
+          return;
+        }
+
+        setStatus(llmStatus, `${successLabel} successful.`, "good");
+      } catch (error) {
+        llmOutput.textContent = JSON.stringify({ error: String(error) }, null, 2);
+        setStatus(llmStatus, `${successLabel} request failed.`, "bad");
+      } finally {
+        setLlmButtonsDisabled(false);
+      }
+    }
+
+    async function generateAnswer() {
+      const courseId = llmCourseId.value.trim();
+      const query = llmQuery.value.trim();
+
+      if (!courseId || !query) {
+        setStatus(llmStatus, "Course ID and query are required for generate_answer.", "bad");
+        return;
+      }
+
+      await callLlmEndpoint("/generate_answer", { course_id: courseId, query }, "Answer generation");
+    }
+
+    async function generateQuiz() {
+      const courseId = llmCourseId.value.trim();
+
+      if (!courseId) {
+        setStatus(llmStatus, "Course ID is required for generate_quiz.", "bad");
+        return;
+      }
+
+      await callLlmEndpoint("/generate_quiz", { course_id: courseId }, "Quiz generation");
+    }
+
+    async function generatePresentation() {
+      const courseId = llmCourseId.value.trim();
+      const query = llmQuery.value.trim();
+
+      if (!courseId || !query) {
+        setStatus(llmStatus, "Course ID and query are required for generate_presentation.", "bad");
+        return;
+      }
+
+      await callLlmEndpoint("/generate_presentation", { course_id: courseId, query }, "Presentation generation");
+    }
+
     uploadBtn.addEventListener("click", uploadPdf);
+    readyBtn.addEventListener("click", checkReadiness);
     queryBtn.addEventListener("click", retrieveChunks);
+    answerBtn.addEventListener("click", generateAnswer);
+    quizBtn.addEventListener("click", generateQuiz);
+    presentationBtn.addEventListener("click", generatePresentation);
+
     queryText.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
         retrieveChunks();
+      }
+    });
+
+    llmQuery.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        generateAnswer();
       }
     });
   </script>
