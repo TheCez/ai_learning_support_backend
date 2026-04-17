@@ -11,15 +11,14 @@ services:
       - RAW_PDF_STORAGE_PATH=/app/data/raw_pdfs
       - EXTRACTED_IMAGE_STORAGE_PATH=/app/data/extracted_images
     volumes:
-      - ./ai-learning-support-rag-api/data/raw_pdfs:/app/data/raw_pdfs
-      - ./ai-learning-support-rag-api/data/extracted_images:/app/data/extracted_images
+      - rag_pdfs:/app/data/raw_pdfs
+      - rag_images:/app/data/extracted_images
     ports:
       - "8000:8000"
     depends_on:
       - qdrant
     command: >
       sh -c "
-      rm -rf /app/data/raw_pdfs/* /app/data/extracted_images/* &&
       mkdir -p /app/data/raw_pdfs /app/data/extracted_images &&
       uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
       "
@@ -28,8 +27,8 @@ services:
     image: qdrant/qdrant
     ports:
       - "6333:6333"
-    tmpfs:
-      - /qdrant/storage
+    volumes:
+      - qdrant_storage:/qdrant/storage
 
   llm_api:
     build:
@@ -44,3 +43,11 @@ services:
     depends_on:
       - rag_api
     command: uv run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+
+volumes:
+  qdrant_storage:
+    driver: local
+  rag_pdfs:
+    driver: local
+  rag_images:
+    driver: local
