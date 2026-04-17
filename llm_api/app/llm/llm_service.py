@@ -87,6 +87,80 @@ STOPWORDS = {
     "but", "about", "your", "you", "we", "they", "those", "these",
 }
 
+GREETING_TOKENS = {
+    "hello",
+    "hi",
+    "hallo",
+    "hey",
+    "servus",
+    "greetings",
+    "moin",
+}
+
+
+def _extract_name_from_query(query: str) -> str | None:
+    lowered = (query or "").strip()
+    if not lowered:
+        return None
+
+    patterns = [
+        r"\b(?:i am|i'm|my name is)\s+([A-Za-z][A-Za-z\-']{1,30})",
+        r"\b(?:ich bin|mein name ist)\s+([A-Za-z][A-Za-z\-']{1,30})",
+        r"\b(?:hello|hallo|hi|hey)\s+([A-Za-z][A-Za-z\-']{1,30})\b",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, lowered, flags=re.IGNORECASE)
+        if match:
+            name = match.group(1).strip()
+            return name[:1].upper() + name[1:]
+    return None
+
+
+def _is_greeting_only_query(query: str) -> bool:
+    normalized = (query or "").strip().lower()
+    if not normalized:
+        return False
+
+    greeting_with_intro_pattern = (
+        r"^\s*(hello|hi|hallo|hey|servus|greetings|moin)"
+        r"(?:[\s,!.]+(?:i am|i'm|my name is|ich bin|mein name ist)\s+[a-z][a-z\-']{1,30})?"
+        r"(?:[\s,!.]+[a-z][a-z\-']{1,30})?\s*[!.?]*\s*$"
+    )
+    if re.match(greeting_with_intro_pattern, normalized, flags=re.IGNORECASE):
+        return True
+
+    words = re.findall(r"[a-zA-Z]+", normalized)
+    if not words:
+        return False
+
+    non_greeting_words = {
+        word
+        for word in words
+        if word not in GREETING_TOKENS
+        and word not in {"there", "sir", "professor", "team", "everyone"}
+    }
+    return len(non_greeting_words) == 0
+
+
+def _build_professor_greeting(query: str, persona: str = "standard") -> str:
+    name = _extract_name_from_query(query)
+    if name:
+        return (
+            f"Hallo {name}, schoen, dass du da bist. "
+            "Ich bin Prof. Wagner und helfe dir gern. "
+            "Wenn du moechtest, stell mir einfach eine Frage zu deinem Kursmaterial."
+        )
+
+    normalized_persona = (persona or "standard").strip().lower()
+    if normalized_persona == "ki_professor":
+        return (
+            "Hallo, schoen dich zu sehen. Ich bin Prof. Wagner. "
+            "Ich helfe dir gern beim Lernen. "
+            "Frag mich einfach etwas zu deinem Kursmaterial."
+        )
+
+    return "Hello. I am ready to help. Ask me a question about your course material any time."
+
 
 def _tokenize(text: str) -> set[str]:
     tokens = re.findall(r"[a-z0-9]+", text.lower())
@@ -348,6 +422,9 @@ def _fetch_quiz_results(course_id: str) -> list[dict[str, object]]:
 
 def generate_answer(course_id: str, query: str, persona: str = "standard") -> AskResponse:
     try:
+        if _is_greeting_only_query(query):
+            return AskResponse(answer=_build_professor_greeting(query=query, persona=persona), images=[])
+
         results = fetch_retrieval_results(course_id=course_id, query=query)
         if not results:
             return AskResponse(answer="This was not found in the uploaded material.", images=[])
@@ -667,6 +744,21 @@ def generate_presentation(course_id: str, query: str, persona: str = "standard")
     4. Each slide includes title, bullets, image_url, and spoken_text.
     """
     try:
+        if _is_greeting_only_query(query):
+            greeting_text = _build_professor_greeting(query=query, persona=persona)
+            return PresentationResponse(
+                slides=[
+                    Slide(
+                        title="Greeting",
+                        bullets=["Ready to help with your course"],
+                        image_url=None,
+                        spoken_text=greeting_text,
+                        source_page=None,
+                    )
+                ],
+                images=[],
+            )
+
         # Step 1: Fetch reliable context
         results = fetch_retrieval_results(course_id=course_id, query=query)
         if not results:
