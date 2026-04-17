@@ -3,6 +3,7 @@
 
 import os
 import json
+import logging
 import re
 from urllib.parse import quote
 
@@ -41,6 +42,7 @@ RAG_API_BASE_URL = os.getenv("RAG_API_BASE_URL", "http://rag_api:8000/api/v1")
 
 # Create OpenAI-compatible client using university base URL.
 client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
+logger = logging.getLogger(__name__)
 
 
 def _is_allowed_image_url(url: str) -> bool:
@@ -413,6 +415,30 @@ def _parse_slide_payload(content: str) -> SlidePayload:
     return SlidePayload.model_validate(payload)
 
 
+def _build_fallback_slide(spoken_text: str, results: list[dict[str, object]]) -> Slide:
+    summary_text = str(spoken_text or "").strip()
+    short_text = summary_text[:280].strip()
+    if summary_text and len(summary_text) > 280:
+        short_text = f"{short_text}..."
+
+    source_page: int | None = None
+    first_page = results[0].get("page_no") if results else None
+    try:
+        if first_page is not None:
+            normalized = int(first_page)
+            source_page = normalized if normalized > 0 else None
+    except (TypeError, ValueError):
+        source_page = None
+
+    return Slide(
+        title="Key Concepts Overview",
+        bullets=["Core points from study material"],
+        image_url=None,
+        spoken_text=short_text or "Key concepts are summarized from the available context.",
+        source_page=source_page,
+    )
+
+
 def generate_presentation(course_id: str, query: str, persona: str = "standard") -> PresentationResponse:
     """
     Generate a presentation deck where each slide contains its own narration.
@@ -442,6 +468,7 @@ def generate_presentation(course_id: str, query: str, persona: str = "standard")
         slide_system_prompt, slide_user_prompt = build_slide_summarization_messages(
             spoken_text=spoken_text,
             image_urls=images,
+            context_chunks=results,
             persona=persona,
         )
 
@@ -465,15 +492,42 @@ def generate_presentation(course_id: str, query: str, persona: str = "standard")
             return PresentationResponse(slides=[], images=images)
 
         # Step 5: Parse and sanitize slides with per-slide narration
-        slide_payload = _parse_slide_payload(slide_content)
+        try:
+            slide_payload = _parse_slide_payload(slide_content)
+            candidate_slides = slide_payload.slides
+        except Exception:
+            logger.exception("Slide payload validation failed. Raw content: %s", slide_content)
+            raw_payload = json.loads(slide_content)
+            raw_slides = raw_payload.get("slides", []) if isinstance(raw_payload, dict) else []
+            candidate_slides = []
+            for raw_slide in raw_slides[:4]:
+                if not isinstance(raw_slide, dict):
+                    continue
+                candidate_slides.append(
+                    Slide(
+                        title=str(raw_slide.get("title") or "Summary"),
+                        bullets=[str(item).strip() for item in (raw_slide.get("bullets") or []) if str(item).strip()],
+                        image_url=raw_slide.get("image_url"),
+                        spoken_text=str(raw_slide.get("spoken_text") or "").strip(),
+                        source_page=raw_slide.get("source_page"),
+                    )
+                )
+
         sanitized_slides: list[Slide] = []
-        for raw_slide in slide_payload.slides[:4]:
+        for raw_slide in candidate_slides[:4]:
             title = str(raw_slide.title or "").strip() or "Summary"
             bullets = [str(bullet).strip() for bullet in raw_slide.bullets if str(bullet).strip()]
             image_url = str(raw_slide.image_url or "").strip() if raw_slide.image_url else None
             if image_url and not _is_allowed_image_url(image_url):
                 image_url = None
             spoken_text_slide = str(raw_slide.spoken_text or "").strip() if hasattr(raw_slide, 'spoken_text') else ""
+            source_page: int | None = None
+            if hasattr(raw_slide, "source_page") and raw_slide.source_page is not None:
+                try:
+                    source_page_value = int(raw_slide.source_page)
+                    source_page = source_page_value if source_page_value > 0 else None
+                except (TypeError, ValueError):
+                    source_page = None
 
             sanitized_slides.append(
                 Slide(
@@ -481,10 +535,15 @@ def generate_presentation(course_id: str, query: str, persona: str = "standard")
                     bullets=bullets[:5],
                     image_url=image_url,
                     spoken_text=spoken_text_slide,
+                    source_page=source_page,
                 )
             )
 
+        if not sanitized_slides:
+            sanitized_slides = [_build_fallback_slide(spoken_text=spoken_text, results=results)]
+
         return PresentationResponse(slides=sanitized_slides, images=images)
 
-    except Exception as e:
+    except Exception:
+        logger.exception("generate_presentation failed")
         return PresentationResponse(slides=[], images=[])

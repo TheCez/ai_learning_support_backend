@@ -1,5 +1,7 @@
-from pydantic import BaseModel, Field
-from typing import List
+import re
+from typing import List, Optional
+
+from pydantic import BaseModel, Field, field_validator
 
 
 class AskRequest(BaseModel):
@@ -65,6 +67,40 @@ class Slide(BaseModel):
     bullets: List[str] = Field(default_factory=list)
     image_url: str | None = None
     spoken_text: str = ""  # Narration specific to this slide
+    source_page: Optional[int] = Field(
+        default=None,
+        description="The integer page number where the info was found. If unknown, missing, or multiple pages apply, you MUST return null.",
+    )
+
+    @field_validator("source_page", mode="before")
+    @classmethod
+    def normalize_source_page(cls, value):
+        if value is None:
+            return None
+
+        if isinstance(value, bool):
+            return None
+
+        if isinstance(value, int):
+            return value if value > 0 else None
+
+        if isinstance(value, float):
+            normalized = int(value)
+            return normalized if normalized > 0 else None
+
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"", "none", "null", "n/a", "unknown"}:
+                return None
+
+            match = re.search(r"\d+", normalized)
+            if not match:
+                return None
+
+            parsed = int(match.group(0))
+            return parsed if parsed > 0 else None
+
+        return None
 
 
 class PresentationRequest(BaseModel):

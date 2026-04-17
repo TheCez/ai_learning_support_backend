@@ -193,9 +193,22 @@ Instructions:
     return system_prompt, user_prompt
 
 
-def build_slide_summarization_messages(spoken_text: str, image_urls: list[str], persona: str = "standard"):
+def build_slide_summarization_messages(
+    spoken_text: str,
+    image_urls: list[str],
+    context_chunks: list[dict[str, Any]],
+    persona: str = "standard",
+):
     normalized_persona = (persona or "standard").strip().lower()
     image_context = "\n".join(f"- {url}" for url in image_urls) if image_urls else "None"
+    chunk_lines: list[str] = []
+    for index, chunk in enumerate(context_chunks[:16], start=1):
+        page_no = chunk.get("page_no")
+        text = str(chunk.get("text") or "").strip()
+        if not text:
+            continue
+        chunk_lines.append(f"[{index}] page_no={page_no} text={text}")
+    chunk_context = "\n".join(chunk_lines) if chunk_lines else "None"
 
     if normalized_persona == "ki_professor":
         system_prompt = (
@@ -222,6 +235,9 @@ def build_slide_summarization_messages(spoken_text: str, image_urls: list[str], 
 Lecture Transcript (Core Material):
 {spoken_text}
 
+Retrieved Context Chunks (with page_no):
+{chunk_context}
+
 Available Image URL Candidates (use only these exact values):
 {image_context}
 
@@ -237,9 +253,11 @@ Instructions:
 - Use simple, student-friendly language.
 - Do NOT mention pages, documents, uploaded material, or diagrams in any spoken_text.
 - Do NOT tell the student where to look.
+- For each slide, look at the provided context chunks that you used to generate the bullet points. Identify the primary 'page_no' associated with that information and include it in the 'source_page' field. If the information spans multiple pages, just provide the most relevant starting page number.
+- CRITICAL: You MUST ALWAYS generate slides if there is relevant context. If you cannot determine the exact page number, set `source_page` to `null`. Do not skip generating a slide just because the page number is missing.
 - image_url must be either one provided candidate URL or null.
 - Return strict JSON with exactly one key: slides.
-- slides must be an array of objects with keys: title, bullets, image_url, spoken_text.
+- slides must be an array of objects with keys: title, bullets, image_url, spoken_text, source_page.
 """
 
     return system_prompt, user_prompt

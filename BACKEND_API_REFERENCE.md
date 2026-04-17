@@ -65,13 +65,15 @@ Response JSON:
       "title": "string",
       "bullets": ["string", "string", "string"],
       "image_url": "/api/v1/images/...",
-      "spoken_text": "The narration for this specific slide..."
+      "spoken_text": "The narration for this specific slide...",
+      "source_page": 6
     },
     {
       "title": "string",
       "bullets": ["string", "string", "string"],
       "image_url": null,
-      "spoken_text": "The narration for this second slide..."
+      "spoken_text": "The narration for this second slide...",
+      "source_page": null
     }
   ],
   "images": ["/api/v1/images/...", "..."]
@@ -85,6 +87,7 @@ Notes:
   - `bullets`: array of 3-5 concise bullet fragments (4-7 words each)
   - `image_url`: one of the provided local image URLs or `null`
   - `spoken_text`: the specific narration/script for Prof. Wagner to say while this slide is displayed (1-2 sentences)
+  - `source_page`: primary PDF page number (`int`) used for that slide, or `null` when unavailable
 - Top-level `images` contains all relevant images across the presentation, restricted to `/api/v1/images/` paths.
 - Per-slide `spoken_text` enables accurate audio synchronization with slide transitions.
 

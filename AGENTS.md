@@ -9,6 +9,7 @@
 ## Current Implementation Status
 - Dependency management updated to use `uv` with required ingestion dependencies: `qdrant-client`, `fastembed`, `langchain-text-splitters`, and `pymupdf`.
 - Docker setup now runs FastAPI and Qdrant together via `docker-compose`, with Qdrant using the official `qdrant/qdrant` image on port `6333`.
+- Qdrant storage now uses a local bind mount at `./qdrant_storage` so the vector database files can be copied between a laptop and a production server.
 - Endpoint paths were updated to remove `group_id` from scope:
   - `POST /api/v1/courses/{course_id}/documents`
   - `GET /api/v1/courses/{course_id}/retrieve`
