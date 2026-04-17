@@ -43,7 +43,9 @@
 
 ### Public Endpoints
 - `POST /generate_answer`
-  - Request JSON: `{"course_id": "string", "query": "string"}`
+  - Request JSON: `{"course_id": "string", "query": "string", "persona": "standard|ki_professor"}`
+  - Special behavior: set `course_id` to `"all"` to query across all indexed courses.
+  - Persona behavior: `persona="ki_professor"` switches response style to Prof. Wagner (friendly, encouraging, and more lenient when context is brief).
   - Response JSON: `{"answer": "string", "images": ["string", "..."]}`
 - `POST /generate_quiz`
   - Request JSON: `{"course_id": "string"}`
@@ -51,7 +53,9 @@
     `{"quiz": [{"question": "string", "options": ["string", "string", "string", "string"], "answer_index": 0, "explanation": "string"}, "..."]}`
   - Target behavior: return up to 10 validated MCQ items.
 - `POST /generate_presentation`
-  - Request JSON: `{"course_id": "string", "query": "string"}`
+  - Request JSON: `{"course_id": "string", "query": "string", "persona": "standard|ki_professor"}`
+  - Special behavior: set `course_id` to `"all"` to query across all indexed courses.
+  - Persona behavior: `persona="ki_professor"` uses Prof. Wagner answer tone for `spoken_text` before slide summarization.
   - Response JSON: `{"spoken_text": "string", "slide": {"title": "string", "bullets": ["string", "string"]}, "images": ["string", "..."]}`
   - Target behavior: KI-Professor presentation mode—reuses answer generation and summarizes into a single slide with title + bullet points.
 
@@ -59,11 +63,13 @@
 - Output must always be JSON with exactly the top-level fields `answer` and `images`.
 - `answer` is a synthesized, student-facing response.
 - `images` contains only selected relevant image URLs (not all retrieved images).
+- Image safety: image URLs are restricted to trusted local paths and must start with `/api/v1/images/`.
 - Raw retrieval chunks/scores must not be exposed by this API.
 
 ### Internal Answering Flow
 1. Fetch retrieval results from `rag_api`:
    - `GET /api/v1/courses/{course_id}/retrieve?query=...`
+  - Reserved keyword: if `course_id` is `"all"`, retrieval runs globally without a `course_id` metadata filter.
 2. Generate a concise grounded answer (JSON-only answer payload).
 3. Rank image candidates locally using keyword overlap and anatomy-term weighting.
 4. Run a second structured model step to choose only the best candidate image IDs.
@@ -98,7 +104,7 @@
 | `GET` | `/health` | None | `{"status": "healthy"}` | Health probe for service availability. |
 | `POST` | `/courses/{course_id}/documents` | `multipart/form-data` with `week` (int), `file` (PDF) | `{"message": "File uploaded. Ingestion started in background.", "metadata": {"course_id": "...", "week": 1, "doc_id": "...", "file_name": "...", "file_path": "...", "file_size": 12345}}` | Upload starts async ingestion and vector indexing. |
 | `GET` | `/courses/{course_id}/documents/{doc_id}/ready` | Path params only | `{"course_id": "...", "doc_id": "...", "ready": true/false, "indexed_chunks": 0}` | Use for polling readiness before querying. |
-| `GET` | `/courses/{course_id}/retrieve` | Query params: `query` (string, required), `limit` (int, optional, 1-20, default 5) | `{"results": [{"text": "...", "score": 0.0, "doc_id": "...", "page_no": 1, "week": 1, "image_url": "/api/v1/images/..." | null}]}` | Returns chunk-level retrieval output; `503` when vector DB unavailable. |
+| `GET` | `/courses/{course_id}/retrieve` | Query params: `query` (string, required), `limit` (int, optional, 1-20, default 5) | `{"results": [{"text": "...", "score": 0.0, "doc_id": "...", "page_no": 1, "week": 1, "image_url": "/api/v1/images/..." | null}]}` | Returns chunk-level retrieval output; `course_id="all"` bypasses course metadata filtering for global search; `503` when vector DB unavailable. |
 | `GET` | `/rag-test-app` | None | HTML page | Frontend demo app entrypoint. |
 | `GET` | `/retrieve-ui` | None | HTML page | Raw retrieval debug UI. |
 | `GET` | `/images/{doc_id}/...` (mounted static under `/api/v1/images`) | None | Image bytes | Use image URLs returned from retrieval/llm_api directly. |
@@ -107,9 +113,9 @@
 
 | Method | Path | Request Contract | Response Contract | Notes |
 |---|---|---|---|---|
-| `POST` | `/generate_answer` | JSON: `{"course_id": "string", "query": "string"}` | JSON: `{"answer": "string", "images": ["string", "..."]}` | Primary user-facing QA endpoint. |
+| `POST` | `/generate_answer` | JSON: `{"course_id": "string", "query": "string", "persona": "standard|ki_professor"}` | JSON: `{"answer": "string", "images": ["string", "..."]}` | Primary user-facing QA endpoint; `persona` is optional and defaults to `standard`. |
 | `POST` | `/generate_quiz` | JSON: `{"course_id": "string"}` | JSON: `{"quiz": [{"question": "string", "options": ["string", "string", "string", "string"], "answer_index": 0, "explanation": "string"}, "..."]}` | Generates course-grounded quiz set (up to 10 MCQs). |
-| `POST` | `/generate_presentation` | JSON: `{"course_id": "string", "query": "string"}` | JSON: `{"spoken_text": "string", "slide": {"title": "string", "bullets": ["string", "..."]}, "images": ["string", "..."]}` | KI-Professor presentation mode: generates long-form answer, summarizes into single slide with title + 3-5 bullet points. |
+| `POST` | `/generate_presentation` | JSON: `{"course_id": "string", "query": "string", "persona": "standard|ki_professor"}` | JSON: `{"spoken_text": "string", "slide": {"title": "string", "bullets": ["string", "..."]}, "images": ["string", "..."]}` | KI-Professor presentation mode; `persona` is optional and defaults to `standard`. |
 
 ### Error Contract Summary
 
@@ -124,6 +130,7 @@
 - Use `llm_api /generate_answer` for chat-style answer flows.
 - Use `llm_api /generate_quiz` for quiz screen flows.
 - Use `llm_api /generate_presentation` for KI-Professor presentation mode (single-slide lecture delivery).
+- Use `course_id="all"` for global cross-course retrieval in answer/presentation flows when no specific course context is provided.
 - Poll `rag_api /courses/{course_id}/documents/{doc_id}/ready` after uploads before enabling ask/quiz/presentation actions.
 - Render images from the `images` array as-is; URLs are already routable from `rag_api` static mount.
 - Treat `quiz` and presentation `slide` outputs as arrays/objects that may be minimal when indexed material is sparse.

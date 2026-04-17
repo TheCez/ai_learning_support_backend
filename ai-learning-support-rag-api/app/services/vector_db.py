@@ -83,21 +83,23 @@ def search_vectors(query: str, course_id: str, limit: int = 5) -> list[dict[str,
     else:
         query_vector = list(query_vector)
 
-    course_filter = models.Filter(
-        must=[
-            models.FieldCondition(
-                key="course_id",
-                match=models.MatchValue(value=course_id),
-            )
-        ]
-    )
+    query_filter = None
+    if course_id != "all":
+        query_filter = models.Filter(
+            must=[
+                models.FieldCondition(
+                    key="course_id",
+                    match=models.MatchValue(value=course_id),
+                )
+            ]
+        )
 
     candidate_limit = max(limit * 4, 20)
 
     query_response = client.query_points(
         collection_name=settings.qdrant_collection_name,
         query=query_vector,
-        query_filter=course_filter,
+        query_filter=query_filter,
         limit=candidate_limit,
         with_payload=True,
     )

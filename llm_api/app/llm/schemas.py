@@ -5,6 +5,7 @@ from typing import List
 class AskRequest(BaseModel):
     course_id: str
     query: str
+    persona: str = "standard"
 
 
 class AskResponse(BaseModel):
@@ -67,6 +68,7 @@ class Slide(BaseModel):
 class PresentationRequest(BaseModel):
     course_id: str
     query: str
+    persona: str = "standard"
 
 
 class PresentationResponse(BaseModel):

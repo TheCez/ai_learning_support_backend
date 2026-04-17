@@ -42,17 +42,53 @@ def build_image_candidates(candidates: list[dict[str, Any]]) -> str:
     return "\n\n".join(lines)
 
 
-def build_answer_messages(question: str, results: list[dict[str, Any]]):
+def build_answer_messages(question: str, results: list[dict[str, Any]], persona: str = "standard"):
     context = build_context(results)
 
-    system_prompt = (
-        "You are an AI study-support assistant for nursing students. "
-        "Use only the retrieved study material provided. "
-        "Do not mention retrieval scores or raw chunks. "
-        "Write a concise, student-friendly answer. "
-        "If the context is insufficient, say exactly: "
-        "'This was not found in the uploaded material.'"
-    )
+    normalized_persona = (persona or "standard").strip().lower()
+    if normalized_persona == "ki_professor":
+        system_prompt = (
+            "You are Prof. Wagner. Explain the core concepts accurately but concisely. "
+            "Keep your spoken response conversational, engaging, and under 3 short paragraphs. "
+            "Do not overwhelm the student with too much text at once. "
+            "You are speaking directly to a student. "
+            "Use the provided context as your foundation, but if the context is brief, "
+            "you are allowed to be lenient and supplement the answer with your general medical/nursing knowledge. "
+            "Do NOT mention 'pages', 'documents', 'uploaded material', or 'diagrams'. "
+            "Do not tell the student where to look. "
+            "You are a knowledgeable nursing professor. Synthesize the provided context and explain the actual concepts clearly. "
+            "If the context mentions heart chambers, explain what the heart chambers are and how they work based on the text. "
+            "Speak directly to the student naturally and comprehensively, while staying concise."
+        )
+    else:
+        system_prompt = (
+            "You are an AI study-support assistant for nursing students. "
+            "Use only the retrieved study material provided. "
+            "Do not mention retrieval scores or raw chunks. "
+            "Write a concise, student-friendly answer. "
+            "If the context is insufficient, say exactly: "
+            "'This was not found in the uploaded material.'"
+        )
+
+    if normalized_persona == "ki_professor":
+        instructions_block = """
+Instructions:
+- Explain the concepts directly to the student in a natural professor voice.
+- Prioritize conceptual understanding and mechanisms, not source-location references.
+- Keep the response concise and under 3 short paragraphs.
+- Do NOT mention pages, documents, uploaded material, or diagrams.
+- Do NOT tell the student where to look.
+- Return strict JSON with exactly one key: answer.
+"""
+    else:
+        instructions_block = """
+Instructions:
+- Answer clearly and naturally in 1-3 sentences.
+- Use only the retrieved material above.
+- Mention page references when they are useful.
+- Return strict JSON with exactly one key: answer.
+- Do not include markdown bullets unless they are necessary for clarity.
+"""
 
     user_prompt = f"""
 Question:
@@ -61,12 +97,7 @@ Question:
 Retrieved Study Material:
 {context}
 
-Instructions:
-- Answer clearly and naturally in 1-3 sentences.
-- Use only the retrieved material above.
-- Mention page references when they are useful.
-- Return strict JSON with exactly one key: answer.
-- Do not include markdown bullets unless they are necessary for clarity.
+{instructions_block}
 """
 
     return system_prompt, user_prompt
@@ -79,7 +110,10 @@ def build_image_selection_messages(question: str, answer: str, candidates: list[
         "You are selecting the most relevant source images for a nursing student answer. "
         "Choose only images that directly support the answer. "
         "Prefer fewer images over unrelated ones. "
-        "If no image is clearly useful, return an empty list."
+        "If no image is clearly useful, return an empty list. "
+        "Under NO circumstances may you invent, generate, or hallucinate image URLs. "
+        "You may ONLY select image URLs explicitly provided to you in the retrieved context. "
+        "If there are no relevant images in the context, you MUST return an empty array []."
     )
 
     user_prompt = f"""
@@ -96,6 +130,8 @@ Instructions:
 - Choose at most 2 image IDs that directly support the answer.
 - Prefer the most specific and visually helpful figures.
 - Do not pick loosely related overview diagrams if a more specific figure exists.
+- Under NO circumstances may you invent, generate, or hallucinate image URLs.
+- You may ONLY select from the exact candidate IDs shown above.
 - Return strict JSON with exactly one key: selected_image_ids.
 - selected_image_ids must be a list of candidate IDs like img_1, img_2.
 - If no image is clearly relevant, return an empty list.
@@ -157,12 +193,26 @@ Instructions:
     return system_prompt, user_prompt
 
 
-def build_slide_summarization_messages(spoken_text: str):
-    system_prompt = (
-        "You are an expert presentation designer and educator. "
-        "Your task is to convert a detailed lecture transcript into a concise, visually-friendly presentation slide. "
-        "Extract core concepts and present them as clear, memorable bullet points."
-    )
+def build_slide_summarization_messages(spoken_text: str, persona: str = "standard"):
+    normalized_persona = (persona or "standard").strip().lower()
+    if normalized_persona == "ki_professor":
+        system_prompt = (
+            "You are Prof. Wagner, a knowledgeable nursing professor and presentation designer. "
+            "Create a single slide that teaches the core nursing concepts clearly and accurately. "
+            "Extract the core concepts into a presentation slide. "
+            "CRITICAL CONSTRAINT: Bullet points must be extremely concise fragments, NOT full sentences. "
+            "Maximum 4 to 7 words per bullet. "
+            "Example: Use 'Four muscular chambers' instead of 'The heart is a muscular pump with four chambers'. "
+            "Do NOT mention 'pages', 'documents', 'uploaded material', or 'diagrams'. "
+            "Do not tell the student where to look. "
+            "Synthesize the transcript into concept-first teaching bullets that explain what the concepts are and how they work."
+        )
+    else:
+        system_prompt = (
+            "You are an expert presentation designer and educator. "
+            "Your task is to convert a detailed lecture transcript into a concise, visually-friendly presentation slide. "
+            "Extract core concepts and present them as clear, memorable bullet points."
+        )
 
     user_prompt = f"""
 Lecture Transcript:
@@ -172,9 +222,12 @@ Instructions:
 - Create a single presentation slide from the transcript.
 - The slide must have a clear, concise title (5-10 words).
 - Generate 3 to 5 short bullet points that capture the core concepts.
-- Each bullet point should be 1 line (max 15 words).
+- Each bullet point must be a concise fragment, not a full sentence.
+- Each bullet point must be 4 to 7 words only.
 - Prioritize key facts and clinical relevance.
 - Use simple, student-friendly language.
+- Do NOT mention pages, documents, uploaded material, or diagrams.
+- Do NOT tell the student where to look.
 - Return strict JSON with exactly two keys: title and bullets.
 - bullets must be an array of strings.
 """

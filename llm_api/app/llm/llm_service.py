@@ -43,6 +43,21 @@ RAG_API_BASE_URL = os.getenv("RAG_API_BASE_URL", "http://rag_api:8000/api/v1")
 client = OpenAI(api_key=OPENAI_API_KEY, base_url=OPENAI_BASE_URL)
 
 
+def _is_allowed_image_url(url: str) -> bool:
+    return url.startswith("/api/v1/images/")
+
+
+def _sanitize_image_urls(urls: list[str]) -> list[str]:
+    sanitized: list[str] = []
+    for url in urls:
+        value = str(url or "").strip()
+        if not value or not _is_allowed_image_url(value):
+            continue
+        if value not in sanitized:
+            sanitized.append(value)
+    return sanitized
+
+
 def fetch_retrieval_results(course_id: str, query: str, limit: int = 5) -> list[dict[str, object]]:
     retrieve_url = f"{RAG_API_BASE_URL.rstrip('/')}/courses/{quote(course_id, safe='')}/retrieve"
 
@@ -73,7 +88,7 @@ def _extract_image_candidates(results: list[dict[str, object]]) -> list[dict[str
 
     for index, chunk in enumerate(results, start=1):
         image_url = str(chunk.get("image_url") or "").strip()
-        if not image_url:
+        if not image_url or not _is_allowed_image_url(image_url):
             continue
 
         candidate = {
@@ -243,13 +258,17 @@ def _fetch_quiz_results(course_id: str) -> list[dict[str, object]]:
     return merged
 
 
-def generate_answer(course_id: str, query: str) -> AskResponse:
+def generate_answer(course_id: str, query: str, persona: str = "standard") -> AskResponse:
     try:
         results = fetch_retrieval_results(course_id=course_id, query=query)
         if not results:
             return AskResponse(answer="This was not found in the uploaded material.", images=[])
 
-        answer_system_prompt, answer_user_prompt = build_answer_messages(question=query, results=results)
+        answer_system_prompt, answer_user_prompt = build_answer_messages(
+            question=query,
+            results=results,
+            persona=persona,
+        )
 
         answer_response = client.chat.completions.create(
             model=OPENAI_MODEL,
@@ -315,7 +334,7 @@ def generate_answer(course_id: str, query: str) -> AskResponse:
         if not selected_images:
             selected_images = [str(candidate["url"]) for candidate in ranked_candidates[:1]]
 
-        return AskResponse(answer=answer_text, images=selected_images)
+        return AskResponse(answer=answer_text, images=_sanitize_image_urls(selected_images))
 
     except Exception as e:
         return AskResponse(answer=f"Unexpected error: {type(e).__name__}: {str(e)}", images=[])
@@ -394,7 +413,7 @@ def _parse_slide_payload(content: str) -> SlidePayload:
     return SlidePayload.model_validate(payload)
 
 
-def generate_presentation(course_id: str, query: str) -> PresentationResponse:
+def generate_presentation(course_id: str, query: str, persona: str = "standard") -> PresentationResponse:
     """
     Generate a presentation slide with accompanying spoken text and images.
     
@@ -403,9 +422,9 @@ def generate_presentation(course_id: str, query: str) -> PresentationResponse:
     """
     try:
         # Step 1: Generate the full answer using existing logic
-        answer_response = generate_answer(course_id=course_id, query=query)
+        answer_response = generate_answer(course_id=course_id, query=query, persona=persona)
         spoken_text = answer_response.answer
-        images = answer_response.images
+        images = _sanitize_image_urls(answer_response.images)
 
         # Step 2: Summarize the answer into a presentation slide
         if spoken_text == "This was not found in the uploaded material.":
@@ -417,7 +436,8 @@ def generate_presentation(course_id: str, query: str) -> PresentationResponse:
             )
 
         slide_system_prompt, slide_user_prompt = build_slide_summarization_messages(
-            spoken_text=spoken_text
+            spoken_text=spoken_text,
+            persona=persona,
         )
 
         slide_response = client.chat.completions.create(
