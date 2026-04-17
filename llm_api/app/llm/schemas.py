@@ -64,6 +64,7 @@ class Slide(BaseModel):
     title: str
     bullets: List[str] = Field(default_factory=list)
     image_url: str | None = None
+    spoken_text: str = ""  # Narration specific to this slide
 
 
 class PresentationRequest(BaseModel):
@@ -73,7 +74,6 @@ class PresentationRequest(BaseModel):
 
 
 class PresentationResponse(BaseModel):
-    spoken_text: str
     slides: List[Slide] = Field(default_factory=list)
     images: List[str] = Field(default_factory=list)
 

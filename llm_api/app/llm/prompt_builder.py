@@ -199,43 +199,47 @@ def build_slide_summarization_messages(spoken_text: str, image_urls: list[str], 
 
     if normalized_persona == "ki_professor":
         system_prompt = (
-            "You are an expert presentation designer. "
-            "Break the professor's lecture down into a logical sequence of 2 to 4 presentation slides. "
-            "Each slide must have a title, an array of 3-5 concise bullet fragments (NOT full sentences), and an image_url. "
-            "CRITICAL CONSTRAINT: bullet fragments must be maximum 7 words each. "
-            "Example: Use 'Four muscular chambers' instead of full-sentence bullets. "
-            "Do NOT mention 'pages', 'documents', 'uploaded material', or 'diagrams'. "
+            "You are an expert presentation designer working with Prof. Wagner. "
+            "Generate a presentation with 2 to 4 slides for a nursing student. "
+            "For EACH slide, provide the specific spoken_text that Prof. Wagner will say while that slide is displayed on screen. "
+            "The spoken_text should directly explain the bullets on that specific slide. "
+            "Each slide must have: title, bullets (3-5 concise fragments, max 7 words each), image_url (or null), and spoken_text. "
+            "Do NOT mention 'pages', 'documents', 'uploaded material', or 'diagrams' in any spoken_text. "
             "Do not tell the student where to look. "
-            "Use only the provided image URL candidates; if none fit a specific slide, set image_url to null."
+            "Use only the provided image URL candidates; if none fit a specific slide, set image_url to null. "
+            "Each spoken_text should be a short 1-2 sentence narration that explains the key point of that single slide."
         )
     else:
         system_prompt = (
             "You are an expert presentation designer and educator. "
             "Your task is to convert a detailed lecture transcript into a concise, visually-friendly multi-slide presentation. "
-            "Extract core concepts and present them as clear, memorable bullet points."
+            "For EACH slide, provide the specific spoken_text that will be narrated while that slide is displayed. "
+            "Extract core concepts and present them as clear, memorable bullet points. "
+            "Each spoken_text should be a short 1-2 sentence narration that explains the key point of that single slide."
         )
 
     user_prompt = f"""
-Lecture Transcript:
+Lecture Transcript (Core Material):
 {spoken_text}
 
 Available Image URL Candidates (use only these exact values):
 {image_context}
 
 Instructions:
-- Break the lecture into a logical sequence of 2 to 4 slides.
-- Each slide must have: title, bullets, image_url.
+- Generate a presentation with 2 to 4 slides.
+- For EACH slide, provide the specific spoken_text that will be narrated while that slide is displayed.
+- Each slide must have: title, bullets, image_url, spoken_text.
 - title should be clear and concise (3-10 words).
 - bullets must contain 3 to 5 items per slide.
-- Each bullet must be a concise fragment, not a full sentence.
-- Each bullet must be 4 to 7 words only.
+- Each bullet must be a concise fragment, not a full sentence (4 to 7 words only).
+- spoken_text should be 1-2 sentences that directly explains the bullets on that specific slide.
 - Prioritize key facts and clinical relevance.
 - Use simple, student-friendly language.
-- Do NOT mention pages, documents, uploaded material, or diagrams.
+- Do NOT mention pages, documents, uploaded material, or diagrams in any spoken_text.
 - Do NOT tell the student where to look.
 - image_url must be either one provided candidate URL or null.
 - Return strict JSON with exactly one key: slides.
-- slides must be an array of objects with keys: title, bullets, image_url.
+- slides must be an array of objects with keys: title, bullets, image_url, spoken_text.
 """
 
     return system_prompt, user_prompt

@@ -60,17 +60,18 @@ Request JSON:
 Response JSON:
 ```json
 {
-  "spoken_text": "string",
   "slides": [
     {
       "title": "string",
       "bullets": ["string", "string", "string"],
-      "image_url": "/api/v1/images/..."
+      "image_url": "/api/v1/images/...",
+      "spoken_text": "The narration for this specific slide..."
     },
     {
       "title": "string",
       "bullets": ["string", "string", "string"],
-      "image_url": null
+      "image_url": null,
+      "spoken_text": "The narration for this second slide..."
     }
   ],
   "images": ["/api/v1/images/...", "..."]
@@ -78,12 +79,14 @@ Response JSON:
 ```
 
 Notes:
-- `slides` is an array (2-4 slides target) and replaces the former single `slide` object contract.
+- `slides` is an array of 2-4 slides, each with its own narration.
 - Each slide object contains:
-  - `title`: string
-  - `bullets`: array of 3-5 concise bullet fragments
+  - `title`: string (3-10 words)
+  - `bullets`: array of 3-5 concise bullet fragments (4-7 words each)
   - `image_url`: one of the provided local image URLs or `null`
-- Top-level `images` remains available for compatibility and is restricted to `/api/v1/images/` paths.
+  - `spoken_text`: the specific narration/script for Prof. Wagner to say while this slide is displayed (1-2 sentences)
+- Top-level `images` contains all relevant images across the presentation, restricted to `/api/v1/images/` paths.
+- Per-slide `spoken_text` enables accurate audio synchronization with slide transitions.
 
 ## rag_api (http://localhost:8000/api/v1)
 

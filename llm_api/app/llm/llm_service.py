@@ -415,26 +415,30 @@ def _parse_slide_payload(content: str) -> SlidePayload:
 
 def generate_presentation(course_id: str, query: str, persona: str = "standard") -> PresentationResponse:
     """
-    Generate a presentation deck with accompanying spoken text and images.
+    Generate a presentation deck where each slide contains its own narration.
     
-    Step 1: Reuse generate_answer logic to get spoken_text and images.
-    Step 2: Summarize spoken_text into 2-4 presentation slides.
+    Flow:
+    1. Fetch retrieval results for the query.
+    2. Generate a complete answer to establish context.
+    3. Pass the answer to slide generation with per-slide narration.
+    4. Each slide includes title, bullets, image_url, and spoken_text.
     """
     try:
-        # Step 1: Generate the full answer using existing logic
+        # Step 1: Fetch reliable context
+        results = fetch_retrieval_results(course_id=course_id, query=query)
+        if not results:
+            return PresentationResponse(slides=[], images=[])
+
+        # Step 2: Generate a complete answer to establish narrative flow
         answer_response = generate_answer(course_id=course_id, query=query, persona=persona)
         spoken_text = answer_response.answer
         images = _sanitize_image_urls(answer_response.images)
 
-        # Step 2: Summarize the answer into presentation slides
+        # Step 3: If no meaningful content, return empty presentation
         if spoken_text == "This was not found in the uploaded material.":
-            # No content to summarize; return minimal empty presentation
-            return PresentationResponse(
-                spoken_text=spoken_text,
-                slides=[],
-                images=[],
-            )
+            return PresentationResponse(slides=[], images=[])
 
+        # Step 4: Generate slides with per-slide narration
         slide_system_prompt, slide_user_prompt = build_slide_summarization_messages(
             spoken_text=spoken_text,
             image_urls=images,
@@ -458,12 +462,9 @@ def generate_presentation(course_id: str, query: str, persona: str = "standard")
         )
 
         if not slide_content:
-            return PresentationResponse(
-                spoken_text=spoken_text,
-                slides=[],
-                images=images,
-            )
+            return PresentationResponse(slides=[], images=images)
 
+        # Step 5: Parse and sanitize slides with per-slide narration
         slide_payload = _parse_slide_payload(slide_content)
         sanitized_slides: list[Slide] = []
         for raw_slide in slide_payload.slides[:4]:
@@ -472,24 +473,18 @@ def generate_presentation(course_id: str, query: str, persona: str = "standard")
             image_url = str(raw_slide.image_url or "").strip() if raw_slide.image_url else None
             if image_url and not _is_allowed_image_url(image_url):
                 image_url = None
+            spoken_text_slide = str(raw_slide.spoken_text or "").strip() if hasattr(raw_slide, 'spoken_text') else ""
 
             sanitized_slides.append(
                 Slide(
                     title=title,
                     bullets=bullets[:5],
                     image_url=image_url,
+                    spoken_text=spoken_text_slide,
                 )
             )
 
-        return PresentationResponse(
-            spoken_text=spoken_text,
-            slides=sanitized_slides,
-            images=images,
-        )
+        return PresentationResponse(slides=sanitized_slides, images=images)
 
     except Exception as e:
-        return PresentationResponse(
-            spoken_text=f"Unexpected error: {type(e).__name__}: {str(e)}",
-            slides=[],
-            images=[],
-        )
+        return PresentationResponse(slides=[], images=[])
