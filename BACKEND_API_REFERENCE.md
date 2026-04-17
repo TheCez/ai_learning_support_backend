@@ -91,6 +91,85 @@ Notes:
 - Top-level `images` contains all relevant images across the presentation, restricted to `/api/v1/images/` paths.
 - Per-slide `spoken_text` enables accurate audio synchronization with slide transitions.
 
+### POST /generate_flashcards
+Request JSON:
+```json
+{
+  "course_id": "string",
+  "num_cards": 5,
+  "level": "simple|technical",
+  "student_context": "string"
+}
+```
+
+Response JSON:
+```json
+{
+  "flashcards": [
+    {
+      "front": "string",
+      "back": "string"
+    }
+  ]
+}
+```
+
+Notes:
+- Uses `rag_api` retrieval context for the supplied `course_id`.
+- `num_cards` defaults to `5` and supports `1-20`.
+- `level` and `student_context` are optional adaptation hints.
+
+### POST /generate_library_summary
+Request JSON:
+```json
+{
+  "course_id": "string",
+  "level": "simple|technical",
+  "student_context": "string"
+}
+```
+
+Response JSON:
+```json
+{
+  "summary": "string"
+}
+```
+
+Notes:
+- Uses `rag_api` retrieval context for the supplied `course_id`.
+- `level` controls tone/depth (`simple` vs `technical`).
+- `student_context` is optional and can personalize the summary emphasis.
+
+### POST /generate_library_cards
+Request JSON:
+```json
+{
+  "course_id": "string",
+  "level": "simple|technical",
+  "student_context": "string"
+}
+```
+
+Response JSON:
+```json
+{
+  "cards": [
+    {
+      "topic": "string",
+      "simple_text": "string",
+      "technical_text": "string"
+    }
+  ]
+}
+```
+
+Notes:
+- Uses `rag_api` retrieval context for the supplied `course_id`.
+- Returns concept cards with both beginner and technical explanations.
+- `level` and `student_context` are optional request fields.
+- Frontend integration rule: do NOT call Gemini directly for flashcards or library generation; call these `llm_api` endpoints instead.
+
 ## rag_api (http://localhost:8000/api/v1)
 
 ### GET /health

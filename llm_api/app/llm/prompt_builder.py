@@ -261,3 +261,106 @@ Instructions:
 """
 
     return system_prompt, user_prompt
+
+
+def build_flashcards_messages(
+    context: str,
+    num_cards: int,
+    level: str | None = None,
+    student_context: str | None = None,
+):
+    normalized_level = (level or "standard").strip().lower()
+    learner_context = (student_context or "").strip()
+
+    system_prompt = (
+        "You are an AI nursing educator creating high-value study flashcards. "
+        "Use only the provided study context. "
+        "Make each card focused, factual, and concise."
+    )
+
+    user_prompt = f"""
+Study Material Context:
+{context}
+
+Student Context:
+{learner_context or 'None'}
+
+Requested Difficulty Level:
+{normalized_level}
+
+Instructions:
+- Generate exactly {num_cards} flashcards.
+- Each flashcard must have keys: front, back.
+- front should be a direct question or prompt.
+- back should be concise and accurate (1-3 sentences).
+- Keep language appropriate for the requested level.
+- Use only the context above; do not invent facts.
+- Return strict JSON with exactly one key: flashcards.
+"""
+
+    return system_prompt, user_prompt
+
+
+def build_library_summary_messages(
+    context: str,
+    level: str | None = None,
+    student_context: str | None = None,
+):
+    normalized_level = (level or "simple").strip().lower()
+    learner_context = (student_context or "").strip()
+
+    system_prompt = (
+        "You are an AI nursing educator preparing a comprehensive reading summary from course material. "
+        "Use only the supplied context and keep the output coherent and structured."
+    )
+
+    user_prompt = f"""
+Study Material Context:
+{context}
+
+Student Context:
+{learner_context or 'None'}
+
+Requested Level:
+{normalized_level}
+
+Instructions:
+- Write one comprehensive summary paragraph set (3-6 short paragraphs).
+- If level is 'simple', use plain language and beginner-friendly explanations.
+- If level is 'technical', use precise terminology and deeper detail.
+- Keep summary grounded only in provided material.
+- Return strict JSON with exactly one key: summary.
+"""
+
+    return system_prompt, user_prompt
+
+
+def build_library_cards_messages(
+    context: str,
+    student_context: str | None = None,
+):
+    learner_context = (student_context or "").strip()
+
+    system_prompt = (
+        "You are an AI nursing educator converting course material into concept cards. "
+        "Each card should explain one topic in both simple and technical language."
+    )
+
+    user_prompt = f"""
+Study Material Context:
+{context}
+
+Student Context:
+{learner_context or 'None'}
+
+Instructions:
+- Generate 4 to 8 concept cards.
+- Each card must have keys: topic, simple_text, technical_text.
+- topic should be short and specific.
+- simple_text should be beginner-friendly and clear.
+- technical_text should be precise and advanced.
+- Ground all content in the provided context.
+- Return strict JSON with exactly one key: cards.
+"""
+
+    return system_prompt, user_prompt

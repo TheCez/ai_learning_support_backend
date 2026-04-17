@@ -14,11 +14,16 @@ from openai import OpenAI
 from .schemas import (
     AnswerPayload,
     AskResponse,
+    FlashcardsPayload,
+    FlashcardsResponse,
     ImageSelectionPayload,
+    LibraryCardsPayload,
+    LibraryCardsResponse,
+    LibrarySummaryPayload,
+    LibrarySummaryResponse,
     QuizPayload,
     QuizQuestion,
     QuizResponse,
-    PresentationRequest,
     PresentationResponse,
     Slide,
     SlidePayload,
@@ -26,6 +31,9 @@ from .schemas import (
 from .prompt_builder import (
     build_answer_messages,
     build_image_selection_messages,
+    build_library_cards_messages,
+    build_library_summary_messages,
+    build_flashcards_messages,
     build_quiz_completion_messages,
     build_quiz_messages,
     build_slide_summarization_messages,
@@ -163,6 +171,84 @@ def _parse_image_selection(content: str) -> ImageSelectionPayload:
 def _parse_quiz_payload(content: str) -> QuizPayload:
     payload = json.loads(content)
     return QuizPayload.model_validate(payload)
+
+
+def _parse_flashcards_payload(content: str) -> FlashcardsPayload:
+    payload = json.loads(content)
+    return FlashcardsPayload.model_validate(payload)
+
+
+def _parse_library_summary_payload(content: str) -> LibrarySummaryPayload:
+    payload = json.loads(content)
+    return LibrarySummaryPayload.model_validate(payload)
+
+
+def _parse_library_cards_payload(content: str) -> LibraryCardsPayload:
+    payload = json.loads(content)
+    return LibraryCardsPayload.model_validate(payload)
+
+
+def _build_learning_context(
+    course_id: str,
+    student_context: str | None = None,
+    limit_per_query: int = 8,
+) -> str:
+    seed_queries = [
+        "key concepts",
+        "important definitions",
+        "core topics",
+        "clinical concepts",
+        "summary of material",
+    ]
+
+    if student_context and student_context.strip():
+        seed_queries.insert(0, student_context.strip())
+
+    merged: list[dict[str, object]] = []
+    seen: set[str] = set()
+
+    for seed_query in seed_queries:
+        try:
+            batch = fetch_retrieval_results(course_id=course_id, query=seed_query, limit=limit_per_query)
+        except Exception:
+            continue
+
+        for item in batch:
+            text = str(item.get("text") or "").strip()
+            if not text:
+                continue
+
+            dedupe_key = "|".join(
+                [
+                    str(item.get("doc_id") or ""),
+                    str(item.get("page_no") or ""),
+                    text[:240],
+                ]
+            )
+            if dedupe_key in seen:
+                continue
+            seen.add(dedupe_key)
+            merged.append(item)
+
+    merged.sort(key=lambda item: float(item.get("score") or 0.0), reverse=True)
+
+    lines: list[str] = []
+    max_chars = 16000
+    total_chars = 0
+    for chunk in merged[:32]:
+        text = str(chunk.get("text") or "").strip()
+        if not text:
+            continue
+
+        page_no = chunk.get("page_no")
+        prefix = f"[Page {page_no}] " if page_no is not None else ""
+        line = f"{prefix}{text}"
+        if total_chars + len(line) > max_chars:
+            break
+        lines.append(line)
+        total_chars += len(line)
+
+    return "\n\n".join(lines)
 
 
 def _normalize_quiz_questions(questions: list[QuizQuestion]) -> list[QuizQuestion]:
@@ -408,6 +494,137 @@ def generate_quiz(course_id: str) -> QuizResponse:
 
     except Exception:
         return QuizResponse(quiz=[])
+
+
+def generate_flashcards(
+    course_id: str,
+    num_cards: int = 5,
+    level: str | None = None,
+    student_context: str | None = None,
+) -> FlashcardsResponse:
+    try:
+        context = _build_learning_context(course_id=course_id, student_context=student_context)
+        if not context:
+            return FlashcardsResponse(flashcards=[])
+
+        system_prompt, user_prompt = build_flashcards_messages(
+            context=context,
+            num_cards=max(1, min(int(num_cards), 20)),
+            level=level,
+            student_context=student_context,
+        )
+
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+
+        content = (
+            response.choices[0].message.content.strip()
+            if response.choices and response.choices[0].message.content
+            else ""
+        )
+        if not content:
+            return FlashcardsResponse(flashcards=[])
+
+        payload = _parse_flashcards_payload(content)
+        cleaned = [card for card in payload.flashcards if card.front.strip() and card.back.strip()]
+        return FlashcardsResponse(flashcards=cleaned[: max(1, min(int(num_cards), 20))])
+    except Exception:
+        logger.exception("generate_flashcards failed")
+        return FlashcardsResponse(flashcards=[])
+
+
+def generate_library_summary(
+    course_id: str,
+    level: str | None = None,
+    student_context: str | None = None,
+) -> LibrarySummaryResponse:
+    try:
+        context = _build_learning_context(course_id=course_id, student_context=student_context)
+        if not context:
+            return LibrarySummaryResponse(summary="This was not found in the uploaded material.")
+
+        system_prompt, user_prompt = build_library_summary_messages(
+            context=context,
+            level=level,
+            student_context=student_context,
+        )
+
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+
+        content = (
+            response.choices[0].message.content.strip()
+            if response.choices and response.choices[0].message.content
+            else ""
+        )
+        if not content:
+            return LibrarySummaryResponse(summary="This was not found in the uploaded material.")
+
+        payload = _parse_library_summary_payload(content)
+        summary = payload.summary.strip() or "This was not found in the uploaded material."
+        return LibrarySummaryResponse(summary=summary)
+    except Exception:
+        logger.exception("generate_library_summary failed")
+        return LibrarySummaryResponse(summary="This was not found in the uploaded material.")
+
+
+def generate_library_cards(
+    course_id: str,
+    level: str | None = None,
+    student_context: str | None = None,
+) -> LibraryCardsResponse:
+    try:
+        context = _build_learning_context(course_id=course_id, student_context=student_context)
+        if not context:
+            return LibraryCardsResponse(cards=[])
+
+        system_prompt, user_prompt = build_library_cards_messages(
+            context=context,
+            student_context=student_context,
+        )
+
+        response = client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.2,
+            response_format={"type": "json_object"},
+        )
+
+        content = (
+            response.choices[0].message.content.strip()
+            if response.choices and response.choices[0].message.content
+            else ""
+        )
+        if not content:
+            return LibraryCardsResponse(cards=[])
+
+        payload = _parse_library_cards_payload(content)
+        cleaned = [
+            card
+            for card in payload.cards
+            if card.topic.strip() and card.simple_text.strip() and card.technical_text.strip()
+        ]
+        return LibraryCardsResponse(cards=cleaned[:8])
+    except Exception:
+        logger.exception("generate_library_cards failed")
+        return LibraryCardsResponse(cards=[])
 
 
 def _parse_slide_payload(content: str) -> SlidePayload:

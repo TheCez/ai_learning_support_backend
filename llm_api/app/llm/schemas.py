@@ -30,6 +30,47 @@ class QuizResponse(BaseModel):
     quiz: List[QuizQuestion] = Field(default_factory=list)
 
 
+class BaseLearningRequest(BaseModel):
+    course_id: str
+    level: str | None = None
+    student_context: str | None = None
+
+
+class FlashcardsRequest(BaseLearningRequest):
+    num_cards: int = Field(default=5, ge=1, le=20)
+
+
+class Flashcard(BaseModel):
+    front: str
+    back: str
+
+
+class FlashcardsResponse(BaseModel):
+    flashcards: List[Flashcard] = Field(default_factory=list)
+
+
+class LibrarySummaryRequest(BaseLearningRequest):
+    pass
+
+
+class LibrarySummaryResponse(BaseModel):
+    summary: str
+
+
+class LibraryCard(BaseModel):
+    topic: str
+    simple_text: str
+    technical_text: str
+
+
+class LibraryCardsRequest(BaseLearningRequest):
+    pass
+
+
+class LibraryCardsResponse(BaseModel):
+    cards: List[LibraryCard] = Field(default_factory=list)
+
+
 class AnswerPayload(BaseModel):
     answer: str
 
@@ -40,6 +81,18 @@ class ImageSelectionPayload(BaseModel):
 
 class QuizPayload(BaseModel):
     quiz: List[QuizQuestion] = Field(default_factory=list)
+
+
+class FlashcardsPayload(BaseModel):
+    flashcards: List[Flashcard] = Field(default_factory=list)
+
+
+class LibrarySummaryPayload(BaseModel):
+    summary: str
+
+
+class LibraryCardsPayload(BaseModel):
+    cards: List[LibraryCard] = Field(default_factory=list)
 
 
 class ValidatedChunk(BaseModel):
